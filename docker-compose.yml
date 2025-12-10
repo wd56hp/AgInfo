@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   postgis:
@@ -13,7 +12,9 @@ services:
       - ./db/data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
     expose:
-      - "5432"
+      - "${POSTGIS_CONTAINER_PORT:-5432}"
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${POSTGIS_HOST_PORT:-15433}:${POSTGIS_CONTAINER_PORT:-5432}"
     networks:
       aginfo-net:
         ipv4_address: 172.28.0.10
@@ -30,7 +31,7 @@ services:
     volumes:
       - ./geoserver/data_dir:/opt/geoserver/data_dir
     ports:
-      - "8080:8080"
+      - "${SERVER_HOST_IP:-0.0.0.0}:${GEOSERVER_HOST_PORT:-8090}:${GEOSERVER_CONTAINER_PORT:-8080}"
     networks:
       aginfo-net:
         ipv4_address: 172.28.0.20
