@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: aginfo-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aginfo}
+      POSTGRES_USER: ${POSTGRES_USER:-agadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    expose:
+      - "5432"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.10
+
+  geoserver:
+    image: kartoza/geoserver:2.24.2
+    container_name: aginfo-geoserver
+    restart: unless-stopped
+    depends_on:
+      - postgis
+    environment:
+      GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER:-admin}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./geoserver/data_dir:/opt/geoserver/data_dir
+    ports:
+      - "8080:8080"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.20
+
+networks:
+  aginfo-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
