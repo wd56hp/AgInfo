@@ -1,3 +1,21 @@
+# --- AgInfo custom ignores ---
+
+# Docker volumes
+db/data/
+geoserver/data_dir/
+
+# Environment files (DO NOT COMMIT SECRETS)
+.env
+*.env
+
+# GeoServer cache files
+geoserver/data_dir/gwc/
+geoserver/data_dir/logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
