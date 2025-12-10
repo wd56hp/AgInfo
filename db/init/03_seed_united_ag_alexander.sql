@@ -153,3 +153,4 @@ JOIN transport_mode t ON t.name = 'TRUCK'
 WHERE f.name = 'Alexander'
   AND f.address_line1 = '200 W K-96'
 ON CONFLICT (facility_id, transport_mode_id) DO NOTHING;
+
