@@ -43,7 +43,7 @@ services:
     volumes:
       - ./web:/usr/share/nginx/html:ro
     ports:
-      - "${SERVER_HOST_IP:-0.0.0.0}:${WEB_HOST_PORT:-8080}:${WEB_CONTAINER_PORT:-80}"
+      - "${SERVER_HOST_IP:-0.0.0.0}:${WEB_HOST_PORT:-8091}:${WEB_CONTAINER_PORT:-80}"
     networks:
       aginfo-net:
         ipv4_address: 172.28.0.30
