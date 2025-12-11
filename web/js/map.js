@@ -7,10 +7,19 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
 }).addTo(map);
 
-// GeoServer configuration - dynamically use current hostname
+// GeoServer configuration - dynamically use current hostname and protocol
 const currentHost = window.location.hostname;
-const GEOSERVER_URL = `http://${currentHost}:8090/geoserver`;
+const currentProtocol = window.location.protocol; // Detects http: or https:
+const GEOSERVER_URL = `${currentProtocol}//${currentHost}:8090/geoserver`;
 const WFS_LAYER = 'aginfo:facility';
+
+// HTML escaping function to prevent XSS vulnerabilities
+function escapeHtml(text) {
+    if (text == null) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 // Store markers for potential cleanup
 let facilityMarkers = [];
@@ -44,15 +53,21 @@ async function loadFacilities() {
         // Process GeoJSON features
         if (geojson.features && geojson.features.length > 0) {
             geojson.features.forEach(feature => {
+                // Skip features with null or missing geometry
+                if (!feature.geometry || !feature.geometry.coordinates) {
+                    console.warn('Skipping feature with missing geometry:', feature);
+                    return;
+                }
+                
                 const props = feature.properties;
                 const coords = feature.geometry.coordinates; // [lng, lat] in GeoJSON
                 
-                // Build popup content
+                // Build popup content with escaped HTML to prevent XSS
                 const popupContent = `
-                    <b>${props.name || 'Unknown'}</b><br>
-                    ${props.city || ''}, ${props.state || ''}<br>
-                    ${props.address_line1 || ''}
-                    ${props.description ? '<br><small>' + props.description + '</small>' : ''}
+                    <b>${escapeHtml(props.name || 'Unknown')}</b><br>
+                    ${escapeHtml(props.city || '')}, ${escapeHtml(props.state || '')}<br>
+                    ${escapeHtml(props.address_line1 || '')}
+                    ${props.description ? '<br><small>' + escapeHtml(props.description) + '</small>' : ''}
                 `;
                 
                 // Create marker (note: GeoJSON uses [lng, lat], Leaflet uses [lat, lng])
@@ -75,10 +90,10 @@ async function loadFacilities() {
         }
     } catch (error) {
         console.error('Error loading facilities:', error);
-        // Show error message to user
+        // Show error message to user (with escaped HTML to prevent XSS)
         L.popup()
             .setLatLng([38.5, -99.5])
-            .setContent(`<b>Error loading facilities</b><br>${error.message}<br><small>Check console for details</small>`)
+            .setContent(`<b>Error loading facilities</b><br>${escapeHtml(error.message)}<br><small>Check console for details</small>`)
             .openOn(map);
     }
 }
