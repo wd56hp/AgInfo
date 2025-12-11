@@ -15,10 +15,32 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 //     version: '1.1.0'
 // }).addTo(map);
 
-// Example marker (replace with GeoServer layer or API call)
-const exampleMarker = L.marker([38.471820, -99.551400])
-    .addTo(map)
-    .bindPopup('<b>United Ag Services</b><br>Alexander, KS<br>200 W K-96');
+// Facility data
+const facilities = [
+    {
+        name: 'Alexander',
+        city: 'Alexander',
+        state: 'KS',
+        address: '200 W K-96',
+        lat: 38.469440,
+        lng: -99.553060
+    },
+    {
+        name: 'Bison',
+        city: 'Bison',
+        state: 'KS',
+        address: '100 North Main',
+        lat: 38.528900,
+        lng: -99.195400
+    }
+];
+
+// Add markers for all facilities
+facilities.forEach(facility => {
+    const marker = L.marker([facility.lat, facility.lng])
+        .addTo(map)
+        .bindPopup(`<b>${facility.name}</b><br>${facility.city}, ${facility.state}<br>${facility.address}`);
+});
 
 // Function to load facilities from GeoServer or API
 async function loadFacilities() {
@@ -31,7 +53,7 @@ async function loadFacilities() {
 
 // Load facilities on map ready
 map.whenReady(() => {
-    console.log('Map ready');
+    console.log('Map ready - showing', facilities.length, 'facilities');
     // loadFacilities();
 });
 
