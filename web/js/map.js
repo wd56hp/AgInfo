@@ -59,8 +59,16 @@ async function loadFacilities() {
                     return;
                 }
                 
-                const props = feature.properties;
                 const coords = feature.geometry.coordinates; // [lng, lat] in GeoJSON
+                
+                // Validate coordinates array has at least 2 elements (lng, lat)
+                if (!Array.isArray(coords) || coords.length < 2 || 
+                    typeof coords[0] !== 'number' || typeof coords[1] !== 'number') {
+                    console.warn('Skipping feature with invalid coordinates:', feature);
+                    return;
+                }
+                
+                const props = feature.properties;
                 
                 // Build popup content with escaped HTML to prevent XSS
                 const popupContent = `
