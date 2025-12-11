@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AgInfo Map</title>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-sA+e2atE5G0uQvECOH3yZG+GICJk12bnl5jwELyhlHLLJoPLD114F8CbnMD4PlzyBbs6k8ZZr3Su2VIsA5x5mQ=="
+    crossorigin=""
+  />
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha512-LkS2G8HkzHnFJVpaz6RtWLpmjHtkobaN6D+PfYZ7R6pujISiFDUFxuDrPq3NbS1RyCBj3Tz6kGKuX3s8mZ8nKw=="
+    crossorigin=""
+  ></script>
+
+  <script>
+    // --- CONFIG SECTION: change these values as needed ---
+
+    // Dynamically detect host from current page URL
+    // This uses the same host as the web page, so it works with any IP
+    const currentHost = window.location.hostname;
+    const GEOSERVER_PORT = 8090; // GeoServer port from docker-compose.yml
+    const GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
+
+    // Workspace:name of your WMS layer (e.g. aginfo:facility)
+    const WMS_LAYER_NAME = "aginfo:facility";
+
+    // Initial map center (Kansas) and zoom
+    const INITIAL_CENTER = [38.5, -98.5]; // [lat, lon]
+    const INITIAL_ZOOM = 7;
+
+
+    // --- MAP SETUP ---
+
+    // Create the map
+    const map = L.map("map").setView(INITIAL_CENTER, INITIAL_ZOOM);
+
+    // OSM base layer
+    const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // GeoServer WMS overlay (your facilities)
+    const facilities = L.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
+      layers: WMS_LAYER_NAME,
+      format: "image/png",
+      transparent: true,
+      version: "1.1.1", // GeoServer works well with 1.1.1
+      attribution: "AgInfo / GeoServer"
+      // You can also add CQL_FILTER, styles, etc. here
+    });
+
+    // Add facilities layer with error handling
+    facilities.addTo(map);
+    
+    // Handle WMS layer errors
+    facilities.on('tileerror', function(error, tile) {
+      console.error('WMS tile error:', error);
+    });
+    
+    // Test GeoServer connection on load
+    map.whenReady(function() {
+      console.log('Map initialized');
+      console.log('GeoServer URL:', GEOSERVER_URL);
+      console.log('WMS Layer:', WMS_LAYER_NAME);
+      
+      // Optional: Test WMS GetCapabilities
+      fetch(`${GEOSERVER_URL}/wms?service=WMS&version=1.1.1&request=GetCapabilities`)
+        .then(response => {
+          if (response.ok) {
+            console.log('GeoServer connection: OK');
+          } else {
+            console.warn('GeoServer connection: HTTP', response.status);
+          }
+        })
+        .catch(error => {
+          console.error('GeoServer connection error:', error);
+          console.warn('Make sure GeoServer is running and accessible at:', GEOSERVER_URL);
+        });
+    });
+
+    // Optional: Layer control
+    L.control.layers(
+      { "OpenStreetMap": osm },
+      { "Facilities": facilities }
+    ).addTo(map);
+  </script>
+</body>
+</html>

@@ -36,6 +36,18 @@ services:
       aginfo-net:
         ipv4_address: 172.28.0.20
 
+  web:
+    image: nginx:alpine
+    container_name: aginfo-web
+    restart: unless-stopped
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${WEB_HOST_PORT:-8080}:${WEB_CONTAINER_PORT:-80}"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.30
+
 networks:
   aginfo-net:
     driver: bridge
