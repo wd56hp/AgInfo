@@ -22,9 +22,47 @@
       width: 100%;
       height: 100%;
     }
+    #filter-control {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+    }
+    #filter-control label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    #filter-control select {
+      width: 200px;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
+  <div id="filter-control">
+    <label for="facility-type-filter">Filter by Facility Type:</label>
+    <select id="facility-type-filter">
+      <option value="">All Types</option>
+      <option value="Agronomy Center">Agronomy Center</option>
+      <option value="Ethanol Plant">Ethanol Plant</option>
+      <option value="Farm Supply Store">Farm Supply Store</option>
+      <option value="Feedlot">Feedlot</option>
+      <option value="Fertilizer Plant">Fertilizer Plant</option>
+      <option value="Fuel Station">Fuel Station</option>
+      <option value="Grain Elevator">Grain Elevator</option>
+      <option value="Seed & Feed Mill">Seed & Feed Mill</option>
+      <option value="Service Station">Service Station</option>
+    </select>
+  </div>
   <div id="map"></div>
 
   <!-- Leaflet JS -->
@@ -62,50 +100,149 @@
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
-    // GeoServer WMS overlay (your facilities)
-    const facilities = L.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
-      layers: WMS_LAYER_NAME,
-      format: "image/png",
-      transparent: true,
-      version: "1.1.1", // GeoServer works well with 1.1.1
-      attribution: "AgInfo / GeoServer"
-      // You can also add CQL_FILTER, styles, etc. here
-    });
+    // HTML escaping function to prevent XSS vulnerabilities
+    function escapeHtml(text) {
+        if (text == null) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 
-    // Add facilities layer with error handling
-    facilities.addTo(map);
+    // Store markers for potential cleanup
+    let facilityMarkers = [];
     
-    // Handle WMS layer errors
-    facilities.on('tileerror', function(error, tile) {
-      console.error('WMS tile error:', error);
-    });
+    // Current filter value
+    let currentFilter = '';
+
+    // Function to load facilities dynamically from GeoServer WFS
+    async function loadFacilities(filterType = '') {
+        try {
+            // Build WFS GetFeature request URL
+            let wfsUrl = `${GEOSERVER_URL}/wfs?` +
+                `service=WFS&` +
+                `version=1.1.0&` +
+                `request=GetFeature&` +
+                `typeName=${WMS_LAYER_NAME}&` +
+                `outputFormat=application/json&` +
+                `srsName=EPSG:4326`;
+            
+            // Add CQL filter if a facility type is selected
+            // Try different possible field names - GeoServer will ignore if field doesn't exist
+            if (filterType && filterType !== '') {
+                // Escape single quotes in the filter value for CQL
+                const escapedFilter = filterType.replace(/'/g, "''");
+                // Try common field name patterns - if CQL fails, client-side filter will handle it
+                wfsUrl += `&CQL_FILTER=facility_type_name='${escapedFilter}'`;
+            }
+
+            console.log('Fetching facilities from:', wfsUrl);
+            
+            const response = await fetch(wfsUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const geojson = await response.json();
+            
+            // Clear existing markers
+            facilityMarkers.forEach(marker => map.removeLayer(marker));
+            facilityMarkers = [];
+            
+            // Process GeoJSON features
+            if (geojson.features && geojson.features.length > 0) {
+                geojson.features.forEach(feature => {
+                    // Skip features with null or missing geometry
+                    if (!feature.geometry || !feature.geometry.coordinates) {
+                        console.warn('Skipping feature with missing geometry:', feature);
+                        return;
+                    }
+                    
+                    const coords = feature.geometry.coordinates; // [lng, lat] in GeoJSON
+                    
+                    // Validate coordinates array has at least 2 elements (lng, lat)
+                    if (!Array.isArray(coords) || coords.length < 2 || 
+                        typeof coords[0] !== 'number' || typeof coords[1] !== 'number') {
+                        console.warn('Skipping feature with invalid coordinates:', feature);
+                        return;
+                    }
+                    
+                    const props = feature.properties;
+                    
+                    // Client-side filtering by facility type (fallback if CQL filter doesn't work)
+                    // Check various possible field names for facility type
+                    const facilityType = props.facility_type_name || 
+                                       props.facility_type || 
+                                       props.facilitytype_name ||
+                                       props.type_name ||
+                                       '';
+                    
+                    // Debug: log first feature to see available properties
+                    if (facilityMarkers.length === 0 && geojson.features.length > 0) {
+                        console.log('Sample feature properties:', Object.keys(props));
+                        console.log('Facility type field value:', facilityType || 'NOT FOUND');
+                    }
+                    
+                    // If a filter is set and this feature doesn't match, skip it
+                    if (filterType && filterType !== '' && facilityType !== filterType) {
+                        return;
+                    }
+                    
+                    // Build popup content with escaped HTML to prevent XSS
+                    const popupContent = `
+                        <b>${escapeHtml(props.name || 'Unknown')}</b><br>
+                        ${escapeHtml(props.city || '')}, ${escapeHtml(props.state || '')}<br>
+                        ${escapeHtml(props.address_line1 || '')}
+                        ${facilityType ? '<br><small>Type: ' + escapeHtml(facilityType) + '</small>' : ''}
+                        ${props.description ? '<br><small>' + escapeHtml(props.description) + '</small>' : ''}
+                    `;
+                    
+                    // Create marker (note: GeoJSON uses [lng, lat], Leaflet uses [lat, lng])
+                    const marker = L.marker([coords[1], coords[0]])
+                        .addTo(map)
+                        .bindPopup(popupContent);
+                    
+                    facilityMarkers.push(marker);
+                });
+                
+                console.log(`Loaded ${facilityMarkers.length} facilities from database`);
+                
+                // Fit map to show all facilities
+                if (facilityMarkers.length > 0) {
+                    const group = new L.featureGroup(facilityMarkers);
+                    map.fitBounds(group.getBounds().pad(0.1));
+                }
+            } else {
+                console.warn('No facilities found in database');
+            }
+        } catch (error) {
+            console.error('Error loading facilities:', error);
+            // Show error message to user (with escaped HTML to prevent XSS)
+            L.popup()
+                .setLatLng([38.5, -99.5])
+                .setContent(`<b>Error loading facilities</b><br>${escapeHtml(error.message)}<br><small>Check console for details</small>`)
+                .openOn(map);
+        }
+    }
     
-    // Test GeoServer connection on load
+    // Load facilities when map is ready
     map.whenReady(function() {
-      console.log('Map initialized');
-      console.log('GeoServer URL:', GEOSERVER_URL);
-      console.log('WMS Layer:', WMS_LAYER_NAME);
-      
-      // Optional: Test WMS GetCapabilities
-      fetch(`${GEOSERVER_URL}/wms?service=WMS&version=1.1.1&request=GetCapabilities`)
-        .then(response => {
-          if (response.ok) {
-            console.log('GeoServer connection: OK');
-          } else {
-            console.warn('GeoServer connection: HTTP', response.status);
-          }
-        })
-        .catch(error => {
-          console.error('GeoServer connection error:', error);
-          console.warn('Make sure GeoServer is running and accessible at:', GEOSERVER_URL);
-        });
+        console.log('Map initialized');
+        console.log('GeoServer URL:', GEOSERVER_URL);
+        console.log('Loading facilities from GeoServer WFS...');
+        loadFacilities();
+    });
+    
+    // Add filter change event listener
+    const filterSelect = document.getElementById('facility-type-filter');
+    filterSelect.addEventListener('change', function() {
+        const selectedType = this.value;
+        console.log('Filter changed to:', selectedType || 'All Types');
+        currentFilter = selectedType;
+        loadFacilities(selectedType);
     });
 
-    // Optional: Layer control
-    L.control.layers(
-      { "OpenStreetMap": osm },
-      { "Facilities": facilities }
-    ).addTo(map);
+    // Optional: Layer control (removed since we're using dynamic markers now)
   </script>
 </body>
 </html>
