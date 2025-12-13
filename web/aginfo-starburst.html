@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AgInfo Starburst Map - By Company</title>
+  
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 30px;
+    }
+    
+    #chart-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 600px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin: 20px auto;
+      max-width: 1200px;
+      position: relative;
+    }
+    
+    #starburst {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .tooltip {
+      position: absolute;
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 1000;
+    }
+    
+    .tooltip.visible {
+      opacity: 1;
+    }
+    
+    .legend {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      font-size: 12px;
+      max-width: 200px;
+    }
+    
+    .legend h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    .legend-item {
+      margin: 5px 0;
+      display: flex;
+      align-items: center;
+    }
+    
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
+      border-radius: 3px;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 50px;
+      color: #666;
+    }
+    
+    .error {
+      text-align: center;
+      padding: 50px;
+      color: #d32f2f;
+    }
+    
+    .info-panel {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      font-size: 12px;
+      max-width: 250px;
+    }
+    
+    .info-panel h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>AgInfo Starburst Map</h1>
+  <div class="subtitle">Facilities grouped by Company and Facility Type</div>
+  
+  <div id="chart-container">
+    <div id="starburst"></div>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="legend" id="legend">
+      <h3>Legend</h3>
+      <div id="legend-content"></div>
+    </div>
+    <div class="info-panel" id="info-panel">
+      <h3>Info</h3>
+      <div id="info-content">Click on a segment to see details</div>
+    </div>
+  </div>
+
+  <!-- D3.js library -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <script>
+    // --- CONFIG SECTION: change these values as needed ---
+    
+    const currentHost = window.location.hostname;
+    const GEOSERVER_PORT = 8090;
+    const GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
+    const WMS_LAYER_NAME = "aginfo:facility";
+    
+    // Chart dimensions
+    const width = 800;
+    const height = 800;
+    const radius = Math.min(width, height) / 2 - 40;
+    
+    // Color schemes
+    const colorSchemes = {
+      company: d3.scaleOrdinal(d3.schemeCategory20),
+      facilityType: d3.scaleOrdinal(d3.schemeSet3),
+      default: d3.scaleOrdinal(d3.schemePastel1)
+    };
+    
+    // --- GLOBAL VARIABLES ---
+    let data = null;
+    let root = null;
+    let partition = null;
+    let arc = null;
+    let svg = null;
+    let g = null;
+    
+    // --- INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('Initializing starburst map...');
+      initializeChart();
+      loadFacilities();
+    });
+    
+    // --- CHART INITIALIZATION ---
+    function initializeChart() {
+      // Create SVG
+      svg = d3.select("#starburst")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+      
+      g = svg.append("g")
+        .attr("transform", `translate(${width / 2}, ${height / 2})`);
+      
+      // Create partition layout
+      partition = d3.partition()
+        .size([2 * Math.PI, radius]);
+      
+      // Create arc generator
+      arc = d3.arc()
+        .startAngle(d => d.x0)
+        .endAngle(d => d.x1)
+        .innerRadius(d => d.y0)
+        .outerRadius(d => d.y1)
+        .padAngle(0.01)
+        .padRadius(radius);
+    }
+    
+    // --- DATA LOADING ---
+    async function loadFacilities() {
+      try {
+        showLoading();
+        
+        // Build WFS GetFeature request URL
+        // Try to get all properties first (GeoServer will return what's available)
+        let wfsUrl = `${GEOSERVER_URL}/wfs?` +
+          `service=WFS&` +
+          `version=1.1.0&` +
+          `request=GetFeature&` +
+          `typeName=${WMS_LAYER_NAME}&` +
+          `outputFormat=application/json&` +
+          `srsName=EPSG:4326`;
+        
+        // Try to request specific properties if possible
+        // Note: propertyName parameter may not work if GeoServer layer doesn't expose these fields
+        // If it fails, we'll get all properties and filter client-side
+        wfsUrl += `&propertyName=name,facility_type_name,state,city,company_id,company_name,company`;
+        
+        console.log('Fetching facilities from:', wfsUrl);
+        
+        const response = await fetch(wfsUrl);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const geojson = await response.json();
+        console.log('Loaded GeoJSON:', geojson);
+        
+        // Log first feature to see available properties
+        if (geojson.features && geojson.features.length > 0) {
+          console.log('Sample feature properties:', Object.keys(geojson.features[0].properties));
+          console.log('Sample feature:', geojson.features[0].properties);
+        }
+        
+        // If company info is not in the response, try to fetch it separately
+        // For now, we'll process what we have and group by available fields
+        data = processData(geojson);
+        console.log('Processed data:', data);
+        
+        // If no company data, try alternative grouping
+        if (data.totalFacilities > 0 && Object.keys(data.companies).length === 0) {
+          console.warn('No company data found, grouping by facility type only');
+          data = processDataByType(geojson);
+        }
+        
+        // Build hierarchy and render
+        buildHierarchy(data);
+        renderChart();
+        
+      } catch (error) {
+        console.error('Error loading facilities:', error);
+        showError(error.message);
+      }
+    }
+    
+    // --- DATA PROCESSING ---
+    function processData(geojson) {
+      const companies = {};
+      
+      if (!geojson.features || geojson.features.length === 0) {
+        return { companies: {}, totalFacilities: 0 };
+      }
+      
+      geojson.features.forEach(feature => {
+        const props = feature.properties;
+        
+        // Get company name (try different possible field names)
+        // Check for company_id first, then company name fields
+        let companyName = props.company_name || 
+                         props.company || 
+                         props.companyName ||
+                         props.company_name_text ||
+                         null;
+        
+        // If we have company_id but no name, use a generic name
+        if (!companyName && props.company_id) {
+          companyName = `Company ${props.company_id}`;
+        }
+        
+        // Fallback to unknown if still no company info
+        if (!companyName) {
+          companyName = 'Unknown Company';
+        }
+        
+        // Get facility type
+        const facilityType = props.facility_type_name || 
+                            props.facility_type || 
+                            props.facilitytype_name ||
+                            props.type_name ||
+                            props.facility_type_name_text ||
+                            'Unknown Type';
+        
+        // Initialize company if not exists
+        if (!companies[companyName]) {
+          companies[companyName] = {};
+        }
+        
+        // Initialize facility type if not exists
+        if (!companies[companyName][facilityType]) {
+          companies[companyName][facilityType] = [];
+        }
+        
+        // Add facility
+        companies[companyName][facilityType].push({
+          name: props.name || 'Unnamed Facility',
+          city: props.city || '',
+          state: props.state || '',
+          company: companyName,
+          type: facilityType
+        });
+      });
+      
+      return {
+        companies: companies,
+        totalFacilities: geojson.features.length
+      };
+    }
+    
+    // Alternative processing: group by facility type only (fallback)
+    function processDataByType(geojson) {
+      const types = {};
+      
+      if (!geojson.features || geojson.features.length === 0) {
+        return { companies: {}, totalFacilities: 0 };
+      }
+      
+      geojson.features.forEach(feature => {
+        const props = feature.properties;
+        
+        const facilityType = props.facility_type_name || 
+                            props.facility_type || 
+                            props.facilitytype_name ||
+                            props.type_name ||
+                            'Unknown Type';
+        
+        if (!types[facilityType]) {
+          types[facilityType] = [];
+        }
+        
+        types[facilityType].push({
+          name: props.name || 'Unnamed Facility',
+          city: props.city || '',
+          state: props.state || '',
+          type: facilityType
+        });
+      });
+      
+      // Convert to company-like structure for compatibility
+      const companies = {
+        'All Facilities': types
+      };
+      
+      return {
+        companies: companies,
+        totalFacilities: geojson.features.length
+      };
+    }
+    
+    // --- BUILD HIERARCHY ---
+    function buildHierarchy(data) {
+      const rootData = {
+        name: "All Facilities",
+        children: []
+      };
+      
+      // Add companies
+      Object.keys(data.companies).forEach(companyName => {
+        const companyData = {
+          name: companyName,
+          children: []
+        };
+        
+        // Add facility types
+        Object.keys(data.companies[companyName]).forEach(facilityType => {
+          const facilities = data.companies[companyName][facilityType];
+          const typeData = {
+            name: facilityType,
+            children: facilities.map(f => ({
+              name: f.name,
+              value: 1,
+              company: f.company,
+              type: f.type,
+              city: f.city,
+              state: f.state
+            }))
+          };
+          
+          companyData.children.push(typeData);
+        });
+        
+        rootData.children.push(companyData);
+      });
+      
+      // Create hierarchy using d3.hierarchy
+      root = d3.hierarchy(rootData)
+        .sum(d => d.value || (d.children ? 0 : 1))
+        .sort((a, b) => b.value - a.value);
+      
+      // Compute partition layout
+      partition(root);
+    }
+    
+    // --- RENDER CHART ---
+    function renderChart() {
+      if (!root) {
+        console.error('No root data to render');
+        return;
+      }
+      
+      // Clear existing content
+      g.selectAll("*").remove();
+      
+      // Get all nodes (excluding root)
+      const nodes = root.descendants().filter(d => d.depth > 0);
+      
+      // Create color scale based on depth
+      const colorScale = d3.scaleOrdinal()
+        .domain(nodes.map(d => {
+          if (d.depth === 1) return d.data.name; // Company level
+          if (d.depth === 2) return d.parent.data.name + '_' + d.data.name; // Facility type level
+          return d.parent.parent.data.name + '_' + d.parent.data.name + '_' + d.data.name;
+        }))
+        .range(d3.quantize(d3.interpolateRainbow, nodes.length));
+      
+      // Draw arcs
+      const path = g.selectAll("path")
+        .data(nodes)
+        .enter()
+        .append("path")
+        .attr("fill", d => {
+          if (d.depth === 1) {
+            return colorSchemes.company(d.data.name);
+          } else if (d.depth === 2) {
+            return d3.color(colorSchemes.company(d.parent.data.name)).brighter(0.5);
+          } else {
+            return d3.color(colorSchemes.company(d.parent.parent.data.name)).brighter(1.2);
+          }
+        })
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 1)
+        .attr("d", arc)
+        .style("cursor", "pointer")
+        .on("mouseover", function(event, d) {
+          showTooltip(event, d);
+          highlightPath(d);
+        })
+        .on("mousemove", function(event) {
+          moveTooltip(event);
+        })
+        .on("mouseout", function() {
+          hideTooltip();
+          resetHighlight();
+        })
+        .on("click", function(event, d) {
+          zoomToNode(d);
+        });
+      
+      // Add text labels for companies and facility types
+      const labels = g.selectAll("text")
+        .data(nodes.filter(d => d.depth <= 2 && (d.x1 - d.x0) > 0.1))
+        .enter()
+        .append("text")
+        .attr("transform", d => {
+          const x = ((d.x0 + d.x1) / 2) * 180 / Math.PI;
+          const y = -(d.y0 + d.y1) / 2;
+          return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+        })
+        .attr("dy", "0.35em")
+        .attr("text-anchor", d => (d.x0 + d.x1) / 2 < Math.PI ? "start" : "end")
+        .attr("font-size", d => d.depth === 1 ? "12px" : "10px")
+        .attr("font-weight", d => d.depth === 1 ? "bold" : "normal")
+        .attr("fill", "#333")
+        .text(d => {
+          const name = d.data.name;
+          const maxLength = d.depth === 1 ? 15 : 12;
+          return name.length > maxLength ? name.substring(0, maxLength) + "..." : name;
+        })
+        .style("pointer-events", "none");
+      
+      // Update legend
+      updateLegend(nodes);
+      
+      // Update info panel
+      updateInfoPanel(data);
+    }
+    
+    // --- INTERACTION FUNCTIONS ---
+    function showTooltip(event, d) {
+      const tooltip = d3.select("#tooltip");
+      const value = d.value || d.children?.reduce((sum, c) => sum + (c.value || 0), 0) || 0;
+      
+      let content = `<strong>${d.data.name}</strong><br>`;
+      
+      if (d.depth === 1) {
+        content += `Company<br>`;
+        content += `Facilities: ${value}`;
+      } else if (d.depth === 2) {
+        content += `Type: ${d.data.name}<br>`;
+        content += `Company: ${d.parent.data.name}<br>`;
+        content += `Count: ${value}`;
+      } else {
+        content += `Facility: ${d.data.name}<br>`;
+        if (d.data.city) content += `${d.data.city}, ${d.data.state || ''}<br>`;
+        content += `Type: ${d.data.type}<br>`;
+        content += `Company: ${d.data.company}`;
+      }
+      
+      tooltip
+        .html(content)
+        .classed("visible", true);
+    }
+    
+    function moveTooltip(event) {
+      const tooltip = d3.select("#tooltip");
+      tooltip
+        .style("left", (event.pageX + 10) + "px")
+        .style("top", (event.pageY - 10) + "px");
+    }
+    
+    function hideTooltip() {
+      d3.select("#tooltip").classed("visible", false);
+    }
+    
+    function highlightPath(d) {
+      // Highlight the path and its ancestors
+      const pathToHighlight = [];
+      let current = d;
+      while (current) {
+        pathToHighlight.push(current);
+        current = current.parent;
+      }
+      
+      g.selectAll("path")
+        .style("opacity", p => pathToHighlight.includes(p) ? 1 : 0.3);
+    }
+    
+    function resetHighlight() {
+      g.selectAll("path").style("opacity", 1);
+    }
+    
+    function zoomToNode(d) {
+      // For now, just log the click
+      // Could implement zoom/focus functionality here
+      console.log('Clicked on:', d.data.name, d);
+    }
+    
+    // --- UI UPDATE FUNCTIONS ---
+    function updateLegend(nodes) {
+      const companies = [...new Set(nodes.filter(d => d.depth === 1).map(d => d.data.name))];
+      const legendContent = d3.select("#legend-content");
+      legendContent.html("");
+      
+      companies.slice(0, 10).forEach(company => {
+        const item = legendContent.append("div").attr("class", "legend-item");
+        item.append("div")
+          .attr("class", "legend-color")
+          .style("background-color", colorSchemes.company(company));
+        item.append("span").text(company);
+      });
+      
+      if (companies.length > 10) {
+        legendContent.append("div")
+          .style("margin-top", "10px")
+          .style("font-style", "italic")
+          .text(`+ ${companies.length - 10} more companies`);
+      }
+    }
+    
+    function updateInfoPanel(data) {
+      const infoContent = d3.select("#info-content");
+      const companyCount = Object.keys(data.companies).length;
+      const totalFacilities = data.totalFacilities;
+      
+      let html = `<strong>Total Facilities:</strong> ${totalFacilities}<br>`;
+      html += `<strong>Companies:</strong> ${companyCount}<br><br>`;
+      html += `<small>Hover over segments for details</small>`;
+      
+      infoContent.html(html);
+    }
+    
+    function showLoading() {
+      const container = d3.select("#chart-container");
+      container.selectAll("*").remove();
+      container.append("div")
+        .attr("class", "loading")
+        .text("Loading facilities data...");
+    }
+    
+    function showError(message) {
+      const container = d3.select("#chart-container");
+      container.selectAll("*").remove();
+      container.append("div")
+        .attr("class", "error")
+        .html(`<strong>Error loading data</strong><br>${message}<br><small>Check console for details</small>`);
+    }
+  </script>
+</body>
+</html>
+

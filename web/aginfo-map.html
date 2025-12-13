@@ -26,13 +26,14 @@
       position: absolute;
       top: 10px;
       right: 10px;
-      z-index: 1000;
+      z-index: 2000;
       background: white;
-      padding: 10px;
+      padding: 12px;
       border-radius: 5px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
       font-family: Arial, sans-serif;
       font-size: 14px;
+      min-width: 220px;
     }
     #filter-control label {
       display: block;
@@ -49,6 +50,9 @@
 </head>
 <body>
   <div id="filter-control">
+    <div style="margin-bottom: 10px;">
+      <a href="aginfo-starburst.html" style="color: #0066cc; text-decoration: none; font-weight: bold;">📊 View Starburst Map</a>
+    </div>
     <label for="facility-type-filter">Filter by Facility Type:</label>
     <select id="facility-type-filter">
       <option value="">All Types</option>
@@ -90,15 +94,40 @@
 
 
     // --- MAP SETUP ---
+    
+    // Wait for DOM to be ready
+    let map;
+    let osm;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Create the map
+        map = L.map("map").setView(INITIAL_CENTER, INITIAL_ZOOM);
 
-    // Create the map
-    const map = L.map("map").setView(INITIAL_CENTER, INITIAL_ZOOM);
-
-    // OSM base layer
-    const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+        // OSM base layer
+        osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        // Load facilities when map is ready
+        map.whenReady(function() {
+            console.log('Map initialized');
+            console.log('GeoServer URL:', GEOSERVER_URL);
+            console.log('Loading facilities from GeoServer WFS...');
+            loadFacilities();
+        });
+        
+        // Add filter change event listener
+        const filterSelect = document.getElementById('facility-type-filter');
+        if (filterSelect) {
+            filterSelect.addEventListener('change', function() {
+                const selectedType = this.value;
+                console.log('Filter changed to:', selectedType || 'All Types');
+                currentFilter = selectedType;
+                loadFacilities(selectedType);
+            });
+        }
+    });
 
     // HTML escaping function to prevent XSS vulnerabilities
     function escapeHtml(text) {
@@ -146,7 +175,9 @@
             const geojson = await response.json();
             
             // Clear existing markers
-            facilityMarkers.forEach(marker => map.removeLayer(marker));
+            if (map) {
+                facilityMarkers.forEach(marker => map.removeLayer(marker));
+            }
             facilityMarkers = [];
             
             // Process GeoJSON features
@@ -198,17 +229,19 @@
                     `;
                     
                     // Create marker (note: GeoJSON uses [lng, lat], Leaflet uses [lat, lng])
-                    const marker = L.marker([coords[1], coords[0]])
-                        .addTo(map)
-                        .bindPopup(popupContent);
-                    
-                    facilityMarkers.push(marker);
+                    if (map) {
+                        const marker = L.marker([coords[1], coords[0]])
+                            .addTo(map)
+                            .bindPopup(popupContent);
+                        
+                        facilityMarkers.push(marker);
+                    }
                 });
                 
                 console.log(`Loaded ${facilityMarkers.length} facilities from database`);
                 
                 // Fit map to show all facilities
-                if (facilityMarkers.length > 0) {
+                if (map && facilityMarkers.length > 0) {
                     const group = new L.featureGroup(facilityMarkers);
                     map.fitBounds(group.getBounds().pad(0.1));
                 }
@@ -218,29 +251,15 @@
         } catch (error) {
             console.error('Error loading facilities:', error);
             // Show error message to user (with escaped HTML to prevent XSS)
-            L.popup()
-                .setLatLng([38.5, -99.5])
-                .setContent(`<b>Error loading facilities</b><br>${escapeHtml(error.message)}<br><small>Check console for details</small>`)
-                .openOn(map);
+            if (map) {
+                L.popup()
+                    .setLatLng([38.5, -99.5])
+                    .setContent(`<b>Error loading facilities</b><br>${escapeHtml(error.message)}<br><small>Check console for details</small>`)
+                    .openOn(map);
+            }
         }
     }
     
-    // Load facilities when map is ready
-    map.whenReady(function() {
-        console.log('Map initialized');
-        console.log('GeoServer URL:', GEOSERVER_URL);
-        console.log('Loading facilities from GeoServer WFS...');
-        loadFacilities();
-    });
-    
-    // Add filter change event listener
-    const filterSelect = document.getElementById('facility-type-filter');
-    filterSelect.addEventListener('change', function() {
-        const selectedType = this.value;
-        console.log('Filter changed to:', selectedType || 'All Types');
-        currentFilter = selectedType;
-        loadFacilities(selectedType);
-    });
 
     // Optional: Layer control (removed since we're using dynamic markers now)
   </script>
