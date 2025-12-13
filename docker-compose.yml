@@ -11,6 +11,7 @@ services:
     volumes:
       - ./db/data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
+      - ./db/temp:/tmp/aginfo-import:ro
     expose:
       - "${POSTGIS_CONTAINER_PORT:-5432}"
     ports:

@@ -206,8 +206,10 @@
       try {
         showLoading();
         
-        // Build WFS GetFeature request URL
-        // Try to get all properties first (GeoServer will return what's available)
+        // First, try to fetch company and facility type lookups
+        const lookups = await fetchLookups();
+        
+        // Build WFS GetFeature request URL (without propertyName to get all fields)
         let wfsUrl = `${GEOSERVER_URL}/wfs?` +
           `service=WFS&` +
           `version=1.1.0&` +
@@ -215,11 +217,6 @@
           `typeName=${WMS_LAYER_NAME}&` +
           `outputFormat=application/json&` +
           `srsName=EPSG:4326`;
-        
-        // Try to request specific properties if possible
-        // Note: propertyName parameter may not work if GeoServer layer doesn't expose these fields
-        // If it fails, we'll get all properties and filter client-side
-        wfsUrl += `&propertyName=name,facility_type_name,state,city,company_id,company_name,company`;
         
         console.log('Fetching facilities from:', wfsUrl);
         
@@ -238,15 +235,14 @@
           console.log('Sample feature:', geojson.features[0].properties);
         }
         
-        // If company info is not in the response, try to fetch it separately
-        // For now, we'll process what we have and group by available fields
-        data = processData(geojson);
+        // Process data with lookups
+        data = processData(geojson, lookups);
         console.log('Processed data:', data);
         
         // If no company data, try alternative grouping
         if (data.totalFacilities > 0 && Object.keys(data.companies).length === 0) {
           console.warn('No company data found, grouping by facility type only');
-          data = processDataByType(geojson);
+          data = processDataByType(geojson, lookups);
         }
         
         // Build hierarchy and render
@@ -259,8 +255,63 @@
       }
     }
     
+    // --- FETCH LOOKUPS ---
+    async function fetchLookups() {
+      const lookups = {
+        companies: {},
+        facilityTypes: {}
+      };
+      
+      try {
+        // Try to fetch companies via REST API or direct query
+        // For now, we'll create a lookup from the facility data itself
+        // by fetching company and facility_type tables if GeoServer exposes them
+        
+        // Try to get company data via WFS if available
+        try {
+          const companyUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:company&outputFormat=application/json&maxFeatures=1000`;
+          const companyResponse = await fetch(companyUrl);
+          if (companyResponse.ok) {
+            const companyData = await companyResponse.json();
+            if (companyData.features) {
+              companyData.features.forEach(f => {
+                if (f.properties.company_id && f.properties.name) {
+                  lookups.companies[f.properties.company_id] = f.properties.name;
+                }
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch company lookup:', e);
+        }
+        
+        // Try to get facility_type data via WFS if available
+        try {
+          const typeUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:facility_type&outputFormat=application/json&maxFeatures=1000`;
+          const typeResponse = await fetch(typeUrl);
+          if (typeResponse.ok) {
+            const typeData = await typeResponse.json();
+            if (typeData.features) {
+              typeData.features.forEach(f => {
+                if (f.properties.facility_type_id && f.properties.name) {
+                  lookups.facilityTypes[f.properties.facility_type_id] = f.properties.name;
+                }
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch facility type lookup:', e);
+        }
+        
+      } catch (error) {
+        console.warn('Error fetching lookups:', error);
+      }
+      
+      return lookups;
+    }
+    
     // --- DATA PROCESSING ---
-    function processData(geojson) {
+    function processData(geojson, lookups = {companies: {}, facilityTypes: {}}) {
       const companies = {};
       
       if (!geojson.features || geojson.features.length === 0) {
@@ -278,9 +329,9 @@
                          props.company_name_text ||
                          null;
         
-        // If we have company_id but no name, use a generic name
+        // If we have company_id but no name, try lookup
         if (!companyName && props.company_id) {
-          companyName = `Company ${props.company_id}`;
+          companyName = lookups.companies[props.company_id] || `Company ${props.company_id}`;
         }
         
         // Fallback to unknown if still no company info
@@ -289,12 +340,22 @@
         }
         
         // Get facility type
-        const facilityType = props.facility_type_name || 
+        let facilityType = props.facility_type_name || 
                             props.facility_type || 
                             props.facilitytype_name ||
                             props.type_name ||
                             props.facility_type_name_text ||
-                            'Unknown Type';
+                            null;
+        
+        // If we have facility_type_id but no name, try lookup
+        if (!facilityType && props.facility_type_id) {
+          facilityType = lookups.facilityTypes[props.facility_type_id] || `Type ${props.facility_type_id}`;
+        }
+        
+        // Fallback to unknown if still no type info
+        if (!facilityType) {
+          facilityType = 'Unknown Type';
+        }
         
         // Initialize company if not exists
         if (!companies[companyName]) {
@@ -323,7 +384,7 @@
     }
     
     // Alternative processing: group by facility type only (fallback)
-    function processDataByType(geojson) {
+    function processDataByType(geojson, lookups = {companies: {}, facilityTypes: {}}) {
       const types = {};
       
       if (!geojson.features || geojson.features.length === 0) {
@@ -333,11 +394,21 @@
       geojson.features.forEach(feature => {
         const props = feature.properties;
         
-        const facilityType = props.facility_type_name || 
+        let facilityType = props.facility_type_name || 
                             props.facility_type || 
                             props.facilitytype_name ||
                             props.type_name ||
-                            'Unknown Type';
+                            null;
+        
+        // If we have facility_type_id but no name, try lookup
+        if (!facilityType && props.facility_type_id) {
+          facilityType = lookups.facilityTypes[props.facility_type_id] || `Type ${props.facility_type_id}`;
+        }
+        
+        // Fallback to unknown if still no type info
+        if (!facilityType) {
+          facilityType = 'Unknown Type';
+        }
         
         if (!types[facilityType]) {
           types[facilityType] = [];
