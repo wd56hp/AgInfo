@@ -51,7 +51,8 @@
 <body>
   <div id="filter-control">
     <div style="margin-bottom: 10px;">
-      <a href="aginfo-starburst.html" style="color: #0066cc; text-decoration: none; font-weight: bold;">📊 View Starburst Map</a>
+      <a href="aginfo-network-map.html" style="color: #0066cc; text-decoration: none; font-weight: bold; display: block; margin-bottom: 5px;">🔗 Network Map</a>
+      <a href="aginfo-starburst-chart.html" style="color: #0066cc; text-decoration: none; font-weight: bold; display: block;">📊 Starburst Chart</a>
     </div>
     <label for="facility-type-filter">Filter by Facility Type:</label>
     <select id="facility-type-filter">
@@ -72,7 +73,6 @@
   <!-- Leaflet JS -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha512-LkS2G8HkzHnFJVpaz6RtWLpmjHtkobaN6D+PfYZ7R6pujISiFDUFxuDrPq3NbS1RyCBj3Tz6kGKuX3s8mZ8nKw=="
     crossorigin=""
   ></script>
 
@@ -99,35 +99,72 @@
     let map;
     let osm;
     
-    document.addEventListener('DOMContentLoaded', function() {
-        // Create the map
-        map = L.map("map").setView(INITIAL_CENTER, INITIAL_ZOOM);
-
-        // OSM base layer
-        osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 19,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
+    // Function to wait for Leaflet to load
+    function waitForLeaflet(callback, maxAttempts = 20) {
+      let attempts = 0;
+      const checkInterval = setInterval(function() {
+        attempts++;
+        console.log(`Checking for Leaflet... attempt ${attempts}`);
         
-        // Load facilities when map is ready
-        map.whenReady(function() {
-            console.log('Map initialized');
-            console.log('GeoServer URL:', GEOSERVER_URL);
-            console.log('Loading facilities from GeoServer WFS...');
-            loadFacilities();
-        });
-        
-        // Add filter change event listener
-        const filterSelect = document.getElementById('facility-type-filter');
-        if (filterSelect) {
-            filterSelect.addEventListener('change', function() {
-                const selectedType = this.value;
-                console.log('Filter changed to:', selectedType || 'All Types');
-                currentFilter = selectedType;
-                loadFacilities(selectedType);
-            });
+        if (typeof L !== 'undefined') {
+          console.log('Leaflet is now available!');
+          clearInterval(checkInterval);
+          callback();
+        } else if (attempts >= maxAttempts) {
+          console.error('Leaflet failed to load after', maxAttempts, 'attempts');
+          clearInterval(checkInterval);
+          alert('Error: Leaflet map library failed to load. Please check your internet connection and refresh the page.');
         }
+      }, 200); // Check every 200ms
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, waiting for Leaflet...');
+        
+        // Wait for Leaflet to be available
+        waitForLeaflet(function() {
+            initializeMap();
+        });
     });
+    
+    function initializeMap() {
+        console.log('Initializing map...');
+
+    // Create the map
+        try {
+            map = L.map("map").setView(INITIAL_CENTER, INITIAL_ZOOM);
+
+    // OSM base layer
+            osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+            // Load facilities when map is ready
+            map.whenReady(async function() {
+                console.log('Map initialized');
+                console.log('GeoServer URL:', GEOSERVER_URL);
+                // Load lookups first, then facilities
+                await loadFacilityTypeLookups();
+                console.log('Loading facilities from GeoServer WFS...');
+                loadFacilities();
+            });
+            
+            // Add filter change event listener
+            const filterSelect = document.getElementById('facility-type-filter');
+            if (filterSelect) {
+                filterSelect.addEventListener('change', function() {
+                    const selectedType = this.value;
+                    console.log('Filter changed to:', selectedType || 'All Types');
+                    currentFilter = selectedType;
+                    loadFacilities(selectedType);
+                });
+            }
+        } catch (error) {
+            console.error('Error creating map:', error);
+            alert('Error initializing map: ' + error.message);
+        }
+    }
 
     // HTML escaping function to prevent XSS vulnerabilities
     function escapeHtml(text) {
@@ -142,7 +179,29 @@
     
     // Current filter value
     let currentFilter = '';
-
+    
+    // Lookups for facility types
+    let facilityTypeLookups = {};
+    
+    // Load facility type lookups
+    async function loadFacilityTypeLookups() {
+        try {
+            const response = await fetch('./data/lookups.json');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.facilityTypes) {
+                    Object.keys(data.facilityTypes).forEach(key => {
+                        facilityTypeLookups[parseInt(key)] = data.facilityTypes[key];
+                        facilityTypeLookups[key] = data.facilityTypes[key];
+                    });
+                    console.log('Loaded facility type lookups:', facilityTypeLookups);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load facility type lookups:', e);
+        }
+    }
+    
     // Function to load facilities dynamically from GeoServer WFS
     async function loadFacilities(filterType = '') {
         try {
@@ -155,14 +214,9 @@
                 `outputFormat=application/json&` +
                 `srsName=EPSG:4326`;
             
-            // Add CQL filter if a facility type is selected
-            // Try different possible field names - GeoServer will ignore if field doesn't exist
-            if (filterType && filterType !== '') {
-                // Escape single quotes in the filter value for CQL
-                const escapedFilter = filterType.replace(/'/g, "''");
-                // Try common field name patterns - if CQL fails, client-side filter will handle it
-                wfsUrl += `&CQL_FILTER=facility_type_name='${escapedFilter}'`;
-            }
+            // Note: CQL filter removed - facility_type_name is not in the GeoServer layer
+            // We'll do client-side filtering instead, which is more reliable
+            // The WFS layer only exposes facility_type_id, not facility_type_name
 
             console.log('Fetching facilities from:', wfsUrl);
             
@@ -172,7 +226,22 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
+            // Check if response is actually JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                // If not JSON, get text to see what we got
+                const text = await response.text();
+                console.error('Response is not JSON:', text.substring(0, 200));
+                throw new Error('Server returned non-JSON response. The filter may not be supported. Try "All Types".');
+            }
+            
             const geojson = await response.json();
+            
+            // Check if response is an error
+            if (geojson.error || geojson.exception) {
+                console.error('GeoServer error:', geojson);
+                throw new Error(geojson.error?.message || geojson.exception || 'GeoServer returned an error');
+            }
             
             // Clear existing markers
             if (map) {
@@ -200,21 +269,19 @@
                     
                     const props = feature.properties;
                     
-                    // Client-side filtering by facility type (fallback if CQL filter doesn't work)
-                    // Check various possible field names for facility type
-                    const facilityType = props.facility_type_name || 
-                                       props.facility_type || 
-                                       props.facilitytype_name ||
-                                       props.type_name ||
-                                       '';
+                    // Get facility type name from lookup
+                    const facilityTypeId = props.facility_type_id;
+                    const facilityType = facilityTypeLookups[facilityTypeId] || 
+                                       facilityTypeLookups[String(facilityTypeId)] ||
+                                       `Type ${facilityTypeId}`;
                     
                     // Debug: log first feature to see available properties
                     if (facilityMarkers.length === 0 && geojson.features.length > 0) {
                         console.log('Sample feature properties:', Object.keys(props));
-                        console.log('Facility type field value:', facilityType || 'NOT FOUND');
+                        console.log('Facility type ID:', facilityTypeId, '-> Name:', facilityType);
                     }
                     
-                    // If a filter is set and this feature doesn't match, skip it
+                    // Client-side filtering by facility type name
                     if (filterType && filterType !== '' && facilityType !== filterType) {
                         return;
                     }

@@ -122,8 +122,12 @@
   </style>
 </head>
 <body>
-  <h1>AgInfo Starburst Map</h1>
+  <h1>AgInfo Starburst Chart</h1>
   <div class="subtitle">Facilities grouped by Company and Facility Type</div>
+  <div style="text-align: center; margin-bottom: 20px;">
+    <a href="aginfo-map.html" style="color: #0066cc; text-decoration: none; margin: 0 10px;">📍 Standard Map</a>
+    <a href="aginfo-network-map.html" style="color: #0066cc; text-decoration: none; margin: 0 10px;">🔗 Network Map</a>
+  </div>
   
   <div id="chart-container">
     <div id="starburst"></div>
@@ -154,9 +158,17 @@
     const height = 800;
     const radius = Math.min(width, height) / 2 - 40;
     
-    // Color schemes
+    // Color schemes - D3 v7 doesn't have schemeCategory20, so we create an extended palette
+    const extendedCompanyColors = [
+      ...d3.schemeCategory10,
+      ...d3.schemeSet2,
+      ...d3.schemeSet1,
+      ...d3.schemePastel2,
+      ...d3.schemeSet3
+    ];
+    
     const colorSchemes = {
-      company: d3.scaleOrdinal(d3.schemeCategory20),
+      company: d3.scaleOrdinal(extendedCompanyColors),
       facilityType: d3.scaleOrdinal(d3.schemeSet3),
       default: d3.scaleOrdinal(d3.schemePastel1)
     };
@@ -245,6 +257,15 @@
           data = processDataByType(geojson, lookups);
         }
         
+        // Check if we have data
+        if (!data || data.totalFacilities === 0) {
+          throw new Error('No facilities found in the database');
+        }
+        
+        if (Object.keys(data.companies).length === 0) {
+          throw new Error('No company data found. Check if facilities have company_id values.');
+        }
+        
         // Build hierarchy and render
         buildHierarchy(data);
         renderChart();
@@ -263,11 +284,33 @@
       };
       
       try {
-        // Try to fetch companies via REST API or direct query
-        // For now, we'll create a lookup from the facility data itself
-        // by fetching company and facility_type tables if GeoServer exposes them
+        // First, try to fetch from local JSON file (fastest and most reliable)
+        try {
+          const lookupUrl = './data/lookups.json';
+          const lookupResponse = await fetch(lookupUrl);
+          if (lookupResponse.ok) {
+            const lookupData = await lookupResponse.json();
+            if (lookupData.companies) {
+              // Convert string keys to numbers for matching
+              Object.keys(lookupData.companies).forEach(key => {
+                lookups.companies[parseInt(key)] = lookupData.companies[key];
+                lookups.companies[key] = lookupData.companies[key]; // Also keep as string for flexibility
+              });
+            }
+            if (lookupData.facilityTypes) {
+              Object.keys(lookupData.facilityTypes).forEach(key => {
+                lookups.facilityTypes[parseInt(key)] = lookupData.facilityTypes[key];
+                lookups.facilityTypes[key] = lookupData.facilityTypes[key]; // Also keep as string
+              });
+            }
+            console.log('Loaded lookups from JSON file:', lookups);
+            return lookups;
+          }
+        } catch (e) {
+          console.warn('Could not fetch lookup JSON file:', e);
+        }
         
-        // Try to get company data via WFS if available
+        // Fallback: Try to get company data via WFS if available
         try {
           const companyUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:company&outputFormat=application/json&maxFeatures=1000`;
           const companyResponse = await fetch(companyUrl);
@@ -282,10 +325,10 @@
             }
           }
         } catch (e) {
-          console.warn('Could not fetch company lookup:', e);
+          console.warn('Could not fetch company lookup via WFS:', e);
         }
         
-        // Try to get facility_type data via WFS if available
+        // Fallback: Try to get facility_type data via WFS if available
         try {
           const typeUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:facility_type&outputFormat=application/json&maxFeatures=1000`;
           const typeResponse = await fetch(typeUrl);
@@ -300,7 +343,7 @@
             }
           }
         } catch (e) {
-          console.warn('Could not fetch facility type lookup:', e);
+          console.warn('Could not fetch facility type lookup via WFS:', e);
         }
         
       } catch (error) {
@@ -329,9 +372,13 @@
                          props.company_name_text ||
                          null;
         
-        // If we have company_id but no name, try lookup
+        // If we have company_id but no name, try lookup (try both number and string key)
         if (!companyName && props.company_id) {
-          companyName = lookups.companies[props.company_id] || `Company ${props.company_id}`;
+          const companyId = props.company_id;
+          companyName = lookups.companies[companyId] || 
+                       lookups.companies[String(companyId)] || 
+                       lookups.companies[parseInt(companyId)] ||
+                       `Company ${companyId}`;
         }
         
         // Fallback to unknown if still no company info
@@ -347,9 +394,13 @@
                             props.facility_type_name_text ||
                             null;
         
-        // If we have facility_type_id but no name, try lookup
+        // If we have facility_type_id but no name, try lookup (try both number and string key)
         if (!facilityType && props.facility_type_id) {
-          facilityType = lookups.facilityTypes[props.facility_type_id] || `Type ${props.facility_type_id}`;
+          const typeId = props.facility_type_id;
+          facilityType = lookups.facilityTypes[typeId] || 
+                        lookups.facilityTypes[String(typeId)] || 
+                        lookups.facilityTypes[parseInt(typeId)] ||
+                        `Type ${typeId}`;
         }
         
         // Fallback to unknown if still no type info
@@ -400,9 +451,13 @@
                             props.type_name ||
                             null;
         
-        // If we have facility_type_id but no name, try lookup
+        // If we have facility_type_id but no name, try lookup (try both number and string key)
         if (!facilityType && props.facility_type_id) {
-          facilityType = lookups.facilityTypes[props.facility_type_id] || `Type ${props.facility_type_id}`;
+          const typeId = props.facility_type_id;
+          facilityType = lookups.facilityTypes[typeId] || 
+                        lookups.facilityTypes[String(typeId)] || 
+                        lookups.facilityTypes[parseInt(typeId)] ||
+                        `Type ${typeId}`;
         }
         
         // Fallback to unknown if still no type info
@@ -435,6 +490,11 @@
     
     // --- BUILD HIERARCHY ---
     function buildHierarchy(data) {
+      if (!data || !data.companies || Object.keys(data.companies).length === 0) {
+        console.error('No company data to build hierarchy');
+        throw new Error('No company data available');
+      }
+      
       const rootData = {
         name: "All Facilities",
         children: []
@@ -482,6 +542,14 @@
       if (!root) {
         console.error('No root data to render');
         return;
+      }
+      
+      // Remove loading overlay
+      d3.select("#chart-container").select(".loading-overlay").remove();
+      
+      // Ensure chart structure exists
+      if (d3.select("#starburst").select("svg").empty()) {
+        initializeChart();
       }
       
       // Clear existing content
@@ -656,19 +724,46 @@
     }
     
     function showLoading() {
+      // Don't remove the chart structure, just show loading overlay
       const container = d3.select("#chart-container");
-      container.selectAll("*").remove();
-      container.append("div")
-        .attr("class", "loading")
-        .text("Loading facilities data...");
+      const existing = container.select(".loading-overlay");
+      if (existing.empty()) {
+        container.append("div")
+          .attr("class", "loading-overlay")
+          .style("position", "absolute")
+          .style("top", "50%")
+          .style("left", "50%")
+          .style("transform", "translate(-50%, -50%)")
+          .style("z-index", "10000")
+          .style("background", "rgba(255,255,255,0.9)")
+          .style("padding", "20px")
+          .style("border-radius", "8px")
+          .text("Loading facilities data...");
+      }
     }
     
     function showError(message) {
+      // Remove loading overlay
+      d3.select("#chart-container").select(".loading-overlay").remove();
+      
       const container = d3.select("#chart-container");
-      container.selectAll("*").remove();
-      container.append("div")
-        .attr("class", "error")
-        .html(`<strong>Error loading data</strong><br>${message}<br><small>Check console for details</small>`);
+      const existing = container.select(".error-overlay");
+      if (existing.empty()) {
+        container.append("div")
+          .attr("class", "error-overlay")
+          .style("position", "absolute")
+          .style("top", "50%")
+          .style("left", "50%")
+          .style("transform", "translate(-50%, -50%)")
+          .style("z-index", "10000")
+          .style("background", "rgba(255,255,255,0.95)")
+          .style("padding", "20px")
+          .style("border-radius", "8px")
+          .style("color", "#d32f2f")
+          .html(`<strong>Error loading data</strong><br>${message}<br><small>Check console for details</small>`);
+      } else {
+        existing.html(`<strong>Error loading data</strong><br>${message}<br><small>Check console for details</small>`);
+      }
     }
   </script>
 </body>

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AgInfo Network Map - Headquarters to Facilities</title>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-sA+e2atE5G0uQvECOH3yZG+GICJk12bnl5jwELyhlHLLJoPLD114F8CbnMD4PlzyBbs6k8ZZr3Su2VIsA5x5mQ=="
+    crossorigin=""
+  />
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 2000;
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      min-width: 250px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    #controls h3 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #333;
+    }
+    #controls label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    #controls select {
+      width: 100%;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      margin-bottom: 10px;
+    }
+    #controls .link {
+      display: block;
+      margin: 10px 0;
+      color: #0066cc;
+      text-decoration: none;
+    }
+    #controls .link:hover {
+      text-decoration: underline;
+    }
+    .legend {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin: 5px 0;
+      font-size: 12px;
+    }
+    .legend-color {
+      width: 20px;
+      height: 3px;
+      margin-right: 8px;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h3>AgInfo Network Map</h3>
+    <div>
+      <a href="aginfo-map.html" class="link">📍 Standard Map</a>
+      <a href="aginfo-starburst-chart.html" class="link">📊 Starburst Chart</a>
+    </div>
+    <label for="company-filter">Filter by Company:</label>
+    <select id="company-filter">
+      <option value="">All Companies</option>
+    </select>
+    <label>
+      <input type="checkbox" id="show-lines" checked> Show Connection Lines
+    </label>
+    <label>
+      <input type="checkbox" id="show-facilities" checked> Show Facilities
+    </label>
+    <div class="legend" id="legend">
+      <strong>Companies:</strong>
+      <div id="legend-content"></div>
+    </div>
+  </div>
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    crossorigin=""
+  ></script>
+
+  <script>
+    // --- CONFIG SECTION ---
+    const currentHost = window.location.hostname;
+    const GEOSERVER_PORT = 8090;
+    const GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
+    const WMS_LAYER_NAME = "aginfo:facility";
+    const INITIAL_CENTER = [38.5, -98.5]; // Kansas
+    const INITIAL_ZOOM = 7;
+
+    // Headquarters facility types (in order of preference)
+    const HEADQUARTERS_TYPES = [
+      'Co-op Office',
+      'General Office',
+      'Admin Office',
+      'Organic Grain Office',
+      'Agronomy Center' // Fallback
+    ];
+
+    // --- GLOBAL VARIABLES ---
+    let map;
+    let osm;
+    let facilityMarkers = [];
+    let connectionLines = [];
+    let companyData = {};
+    let lookups = { companies: {}, facilityTypes: {} };
+    let selectedCompany = '';
+
+    // Color palette for companies
+    const companyColors = [
+      '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+      '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+      '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
+      '#c49c94', '#f7b6d3', '#c7c7c7', '#dbdb8d', '#9edae5'
+    ];
+
+    // --- INITIALIZATION ---
+    // Function to wait for Leaflet to load
+    function waitForLeaflet(callback, maxAttempts = 20) {
+      let attempts = 0;
+      const checkInterval = setInterval(function() {
+        attempts++;
+        console.log(`Checking for Leaflet... attempt ${attempts}`);
+        
+        if (typeof L !== 'undefined') {
+          console.log('Leaflet is now available!');
+          clearInterval(checkInterval);
+          callback();
+        } else if (attempts >= maxAttempts) {
+          console.error('Leaflet failed to load after', maxAttempts, 'attempts');
+          clearInterval(checkInterval);
+          alert('Error: Leaflet map library failed to load. Please check your internet connection and refresh the page.');
+        }
+      }, 200); // Check every 200ms
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('DOM loaded, waiting for Leaflet...');
+      
+      // Wait for Leaflet to be available
+      waitForLeaflet(function() {
+        initializeMap();
+      });
+    });
+    
+    function initializeMap() {
+      console.log('Initializing map...');
+      
+      // Check if map container exists
+      const mapContainer = document.getElementById('map');
+      if (!mapContainer) {
+        console.error('Map container not found!');
+        return;
+      }
+      
+      // Create map
+      try {
+        map = L.map("map").setView(INITIAL_CENTER, INITIAL_ZOOM);
+        console.log('Map created successfully');
+
+        // OSM base layer
+        osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        console.log('OSM layer added');
+
+        // Load lookups first, then facilities
+        map.whenReady(function() {
+          console.log('Map ready, loading lookups...');
+          loadLookups().then(() => {
+            console.log('Lookups loaded, loading facilities...');
+            loadFacilities();
+          }).catch(err => {
+            console.error('Error loading lookups:', err);
+            // Still try to load facilities even if lookups fail
+            loadFacilities();
+          });
+        });
+      } catch (error) {
+        console.error('Error creating map:', error);
+        alert('Error initializing map: ' + error.message);
+      }
+
+      // Event listeners
+      const companyFilter = document.getElementById('company-filter');
+      if (companyFilter) {
+        companyFilter.addEventListener('change', function() {
+          selectedCompany = this.value;
+          updateMap();
+        });
+      }
+
+      const showLines = document.getElementById('show-lines');
+      if (showLines) {
+        showLines.addEventListener('change', function() {
+          updateMap();
+        });
+      }
+
+      const showFacilities = document.getElementById('show-facilities');
+      if (showFacilities) {
+        showFacilities.addEventListener('change', function() {
+          updateMap();
+        });
+      }
+    }
+
+    // --- LOAD LOOKUPS ---
+    async function loadLookups() {
+      try {
+        const response = await fetch('./data/lookups.json');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.companies) {
+            Object.keys(data.companies).forEach(key => {
+              lookups.companies[parseInt(key)] = data.companies[key];
+              lookups.companies[key] = data.companies[key];
+            });
+          }
+          if (data.facilityTypes) {
+            Object.keys(data.facilityTypes).forEach(key => {
+              lookups.facilityTypes[parseInt(key)] = data.facilityTypes[key];
+              lookups.facilityTypes[key] = data.facilityTypes[key];
+            });
+          }
+          console.log('Loaded lookups:', lookups);
+        }
+      } catch (e) {
+        console.warn('Could not load lookups:', e);
+      }
+    }
+
+    // --- LOAD FACILITIES ---
+    async function loadFacilities() {
+      try {
+        const wfsUrl = `${GEOSERVER_URL}/wfs?` +
+          `service=WFS&` +
+          `version=1.1.0&` +
+          `request=GetFeature&` +
+          `typeName=${WMS_LAYER_NAME}&` +
+          `outputFormat=application/json&` +
+          `srsName=EPSG:4326`;
+
+        console.log('Fetching facilities from:', wfsUrl);
+        const response = await fetch(wfsUrl);
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const geojson = await response.json();
+        console.log('Loaded GeoJSON:', geojson);
+
+        // Process facilities by company
+        processFacilities(geojson);
+        updateCompanyFilter();
+        updateMap();
+
+      } catch (error) {
+        console.error('Error loading facilities:', error);
+        alert('Error loading facilities: ' + error.message);
+      }
+    }
+
+    // --- PROCESS FACILITIES ---
+    function processFacilities(geojson) {
+      companyData = {};
+
+      if (!geojson.features || geojson.features.length === 0) {
+        return;
+      }
+
+      geojson.features.forEach(feature => {
+        const props = feature.properties;
+        const coords = feature.geometry.coordinates; // [lon, lat]
+
+        // Get company name
+        const companyId = props.company_id;
+        const companyName = lookups.companies[companyId] || 
+                           lookups.companies[String(companyId)] || 
+                           `Company ${companyId}`;
+
+        // Get facility type
+        const typeId = props.facility_type_id;
+        const facilityType = lookups.facilityTypes[typeId] || 
+                            lookups.facilityTypes[String(typeId)] || 
+                            `Type ${typeId}`;
+
+        // Initialize company if needed
+        if (!companyData[companyName]) {
+          companyData[companyName] = {
+            id: companyId,
+            facilities: [],
+            headquarters: null
+          };
+        }
+
+        // Add facility
+        const facility = {
+          id: props.facility_id || props.name,
+          name: props.name || 'Unnamed Facility',
+          type: facilityType,
+          city: props.city || '',
+          state: props.state || '',
+          coordinates: [coords[1], coords[0]], // [lat, lon] for Leaflet
+          isHeadquarters: HEADQUARTERS_TYPES.includes(facilityType)
+        };
+
+        companyData[companyName].facilities.push(facility);
+
+        // Set as headquarters if it's a HQ type and we don't have one yet
+        if (facility.isHeadquarters && !companyData[companyName].headquarters) {
+          companyData[companyName].headquarters = facility;
+        }
+      });
+
+      // For companies without HQ, use first facility or calculate centroid
+      Object.keys(companyData).forEach(companyName => {
+        const company = companyData[companyName];
+        if (!company.headquarters && company.facilities.length > 0) {
+          // Use first facility as HQ, or calculate centroid
+          company.headquarters = company.facilities[0];
+          
+          // Or calculate centroid of all facilities
+          let totalLat = 0, totalLon = 0;
+          company.facilities.forEach(f => {
+            totalLat += f.coordinates[0];
+            totalLon += f.coordinates[1];
+          });
+          company.headquarters = {
+            ...company.facilities[0],
+            coordinates: [
+              totalLat / company.facilities.length,
+              totalLon / company.facilities.length
+            ],
+            name: `${companyName} (HQ)`,
+            isHeadquarters: true
+          };
+        }
+      });
+
+      console.log('Processed company data:', companyData);
+    }
+
+    // --- UPDATE COMPANY FILTER ---
+    function updateCompanyFilter() {
+      const select = document.getElementById('company-filter');
+      const currentValue = select.value;
+      
+      // Clear existing options except "All Companies"
+      select.innerHTML = '<option value="">All Companies</option>';
+
+      // Add company options
+      Object.keys(companyData).sort().forEach(companyName => {
+        const option = document.createElement('option');
+        option.value = companyName;
+        option.textContent = `${companyName} (${companyData[companyName].facilities.length} facilities)`;
+        select.appendChild(option);
+      });
+
+      // Restore selection
+      if (currentValue && Array.from(select.options).some(opt => opt.value === currentValue)) {
+        select.value = currentValue;
+        selectedCompany = currentValue;
+      }
+    }
+
+    // --- UPDATE MAP ---
+    function updateMap() {
+      // Clear existing markers and lines
+      facilityMarkers.forEach(marker => map.removeLayer(marker));
+      connectionLines.forEach(line => map.removeLayer(line));
+      facilityMarkers = [];
+      connectionLines = [];
+
+      const showLines = document.getElementById('show-lines').checked;
+      const showFacilities = document.getElementById('show-facilities').checked;
+
+      // Get companies to display
+      const companiesToShow = selectedCompany 
+        ? [selectedCompany] 
+        : Object.keys(companyData);
+
+      // Update legend
+      updateLegend(companiesToShow);
+
+      // Draw connections and facilities
+      companiesToShow.forEach((companyName, index) => {
+        const company = companyData[companyName];
+        if (!company || !company.headquarters) return;
+
+        const color = companyColors[index % companyColors.length];
+        const hq = company.headquarters;
+
+        // Draw lines from HQ to each facility
+        if (showLines) {
+          company.facilities.forEach(facility => {
+            // Skip if this is the HQ itself
+            if (facility.id === hq.id && facility.coordinates[0] === hq.coordinates[0]) {
+              return;
+            }
+
+            const line = L.polyline(
+              [hq.coordinates, facility.coordinates],
+              {
+                color: color,
+                weight: 2,
+                opacity: 0.6,
+                dashArray: '5, 5'
+              }
+            ).addTo(map);
+
+            connectionLines.push(line);
+          });
+        }
+
+        // Add facility markers
+        if (showFacilities) {
+          company.facilities.forEach(facility => {
+            const isHQ = facility.id === hq.id && 
+                        facility.coordinates[0] === hq.coordinates[0] &&
+                        facility.coordinates[1] === hq.coordinates[1];
+
+            const icon = L.divIcon({
+              className: 'custom-marker',
+              html: `<div style="
+                background-color: ${isHQ ? color : '#fff'};
+                border: 3px solid ${color};
+                border-radius: 50%;
+                width: ${isHQ ? '16px' : '12px'};
+                height: ${isHQ ? '16px' : '12px'};
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+              "></div>`,
+              iconSize: [isHQ ? 16 : 12, isHQ ? 16 : 12],
+              iconAnchor: [isHQ ? 8 : 6, isHQ ? 8 : 6]
+            });
+
+            const marker = L.marker(facility.coordinates, { icon: icon })
+              .bindPopup(`
+                <strong>${escapeHtml(facility.name)}</strong><br>
+                ${escapeHtml(facility.type)}<br>
+                ${escapeHtml(facility.city)}, ${escapeHtml(facility.state)}<br>
+                <strong>${escapeHtml(companyName)}</strong><br>
+                ${isHQ ? '<strong>🏢 Headquarters</strong>' : ''}
+              `)
+              .addTo(map);
+
+            facilityMarkers.push(marker);
+          });
+        }
+      });
+
+      // Fit map to bounds if we have markers
+      if (facilityMarkers.length > 0) {
+        const group = new L.featureGroup(facilityMarkers);
+        map.fitBounds(group.getBounds().pad(0.1));
+      }
+    }
+
+    // --- UPDATE LEGEND ---
+    function updateLegend(companies) {
+      const legendContent = document.getElementById('legend-content');
+      legendContent.innerHTML = '';
+
+      companies.forEach((companyName, index) => {
+        const color = companyColors[index % companyColors.length];
+        const company = companyData[companyName];
+        const facilityCount = company ? company.facilities.length : 0;
+
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `
+          <span class="legend-color" style="background-color: ${color};"></span>
+          <span>${escapeHtml(companyName)} (${facilityCount})</span>
+        `;
+        legendContent.appendChild(item);
+      });
+    }
+
+    // --- UTILITY FUNCTIONS ---
+    function escapeHtml(text) {
+      if (text == null) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
+

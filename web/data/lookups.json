@@ -1,0 +1,48 @@
+{
+  "companies": {
+    "1": "United Ag Service",
+    "7": "CGS",
+    "8": "Beaver Grain Corp., Inc.",
+    "9": "Ellsworth Co-op",
+    "10": "Midway Coop",
+    "33": "Midland Marketing",
+    "34": "D. E. Bondurant Grain",
+    "35": "Central Prairie Co-op",
+    "212": "American Plains Co-op",
+    "213": "CHS United Ag",
+    "214": "Farmers Co-Op Grain Co (Abbyville)",
+    "215": "Alma Cooperative Oil Assn.",
+    "216": "Anthony Farmers Cooperative",
+    "217": "Two Rivers Consumers Co-op Association",
+    "218": "Beardsley Equity Cooperative Association",
+    "219": "Bartlett Co-op Association",
+    "220": "Cooperative Grain & Supply Company",
+    "221": "AgMark, LLC",
+    "222": "Central Plains Organic Farmers"
+  },
+  "facilityTypes": {
+    "1": "Grain Elevator",
+    "2": "Ethanol Plant",
+    "3": "Feedlot",
+    "4": "Fertilizer Plant",
+    "6": "Agronomy Center",
+    "7": "Fuel Station",
+    "8": "Farm Supply Store",
+    "31": "Seed & Feed Mill",
+    "35": "Service Station",
+    "40": "Feed Mill",
+    "41": "General Office",
+    "99": "Admin Office",
+    "100": "Co-op Location",
+    "101": "Ag Retail",
+    "102": "Agronomy Hub",
+    "103": "Rural Market",
+    "104": "Seed House",
+    "107": "Bulk Fuel",
+    "110": "Elevator",
+    "123": "Co-op Office",
+    "125": "Organic Grain Office",
+    "126": "Grain Terminal"
+  }
+}
+
