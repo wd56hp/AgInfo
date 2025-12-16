@@ -50,12 +50,30 @@
       margin-bottom: 5px;
       font-weight: bold;
     }
-    #controls select {
-      width: 100%;
-      padding: 5px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
+    #controls .select-all {
       margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+    #controls .company-list {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 10px;
+    }
+    #controls .company-item {
+      margin: 5px 0;
+      display: flex;
+      align-items: center;
+    }
+    #controls .company-item input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    #controls .company-item label {
+      cursor: pointer;
+      flex: 1;
+      user-select: none;
+      font-weight: normal;
     }
     #controls .link {
       display: block;
@@ -92,10 +110,16 @@
       <a href="aginfo-map.html" class="link">📍 Standard Map</a>
       <a href="aginfo-starburst-chart.html" class="link">📊 Starburst Chart</a>
     </div>
-    <label for="company-filter">Filter by Company:</label>
-    <select id="company-filter">
-      <option value="">All Companies</option>
-    </select>
+    <label>Filter by Company:</label>
+    <div class="select-all">
+      <label>
+        <input type="checkbox" id="select-all-companies" checked>
+        <strong>Select All</strong>
+      </label>
+    </div>
+    <div class="company-list" id="company-list">
+      <!-- Companies will be populated here -->
+    </div>
     <label>
       <input type="checkbox" id="show-lines" checked> Show Connection Lines
     </label>
@@ -140,7 +164,7 @@
     let connectionLines = [];
     let companyData = {};
     let lookups = { companies: {}, facilityTypes: {} };
-    let selectedCompany = '';
+    let selectedCompanies = new Set(); // Multiple company selection
 
     // Color palette for companies
     const companyColors = [
@@ -246,14 +270,8 @@
         alert('Error initializing map: ' + error.message);
       }
 
-      // Event listeners
-      const companyFilter = document.getElementById('company-filter');
-      if (companyFilter) {
-        companyFilter.addEventListener('change', function() {
-          selectedCompany = this.value;
-          updateMap();
-        });
-      }
+      // Event listeners for company filter
+      setupCompanyFilterListeners();
 
       const showLines = document.getElementById('show-lines');
       if (showLines) {
@@ -409,24 +427,83 @@
 
     // --- UPDATE COMPANY FILTER ---
     function updateCompanyFilter() {
-      const select = document.getElementById('company-filter');
-      const currentValue = select.value;
+      const companyList = document.getElementById('company-list');
+      const companies = Object.keys(companyData).sort();
       
-      // Clear existing options except "All Companies"
-      select.innerHTML = '<option value="">All Companies</option>';
-
-      // Add company options
-      Object.keys(companyData).sort().forEach(companyName => {
-        const option = document.createElement('option');
-        option.value = companyName;
-        option.textContent = `${companyName} (${companyData[companyName].facilities.length} facilities)`;
-        select.appendChild(option);
+      // Clear existing list
+      companyList.innerHTML = '';
+      
+      // Add each company as a checkbox
+      companies.forEach(companyName => {
+        const item = document.createElement('div');
+        item.className = 'company-item';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `company-${companyName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '')}`;
+        checkbox.value = companyName;
+        checkbox.checked = true; // All selected by default
+        
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.textContent = `${companyName} (${companyData[companyName].facilities.length})`;
+        
+        item.appendChild(checkbox);
+        item.appendChild(label);
+        companyList.appendChild(item);
       });
-
-      // Restore selection
-      if (currentValue && Array.from(select.options).some(opt => opt.value === currentValue)) {
-        select.value = currentValue;
-        selectedCompany = currentValue;
+      
+      // Initialize selected companies set with all companies
+      selectedCompanies = new Set(companies);
+    }
+    
+    // --- SETUP COMPANY FILTER LISTENERS ---
+    function setupCompanyFilterListeners() {
+      const selectAllCheckbox = document.getElementById('select-all-companies');
+      const companyList = document.getElementById('company-list');
+      
+      // Select All checkbox
+      if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function(e) {
+          const checkboxes = companyList.querySelectorAll('input[type="checkbox"]');
+          checkboxes.forEach(cb => {
+            cb.checked = e.target.checked;
+          });
+          
+          if (e.target.checked) {
+            selectedCompanies = new Set(Array.from(checkboxes).map(cb => cb.value));
+          } else {
+            selectedCompanies.clear();
+          }
+          
+          updateMap();
+        });
+      }
+      
+      // Individual company checkboxes
+      if (companyList) {
+        companyList.addEventListener('change', function(e) {
+          if (e.target.type === 'checkbox') {
+            const company = e.target.value;
+            
+            if (e.target.checked) {
+              selectedCompanies.add(company);
+            } else {
+              selectedCompanies.delete(company);
+            }
+            
+            // Update "Select All" checkbox state
+            const allCheckboxes = Array.from(companyList.querySelectorAll('input[type="checkbox"]'));
+            const allChecked = allCheckboxes.every(cb => cb.checked);
+            const noneChecked = allCheckboxes.every(cb => !cb.checked);
+            if (selectAllCheckbox) {
+              selectAllCheckbox.checked = allChecked;
+              selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+            }
+            
+            updateMap();
+          }
+        });
       }
     }
 
@@ -442,8 +519,8 @@
       const showFacilities = document.getElementById('show-facilities').checked;
 
       // Get companies to display
-      const companiesToShow = selectedCompany 
-        ? [selectedCompany] 
+      const companiesToShow = selectedCompanies.size > 0
+        ? Array.from(selectedCompanies).filter(name => companyData[name])
         : Object.keys(companyData);
 
       // Update legend
