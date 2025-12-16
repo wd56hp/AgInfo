@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>AgInfo Starburst Map - By Company</title>
   
   <style>
@@ -119,6 +122,102 @@
       font-size: 14px;
       color: #333;
     }
+    
+    .filter-control {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+    }
+    
+    .filter-header {
+      background: white;
+      padding: 10px 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      font-size: 14px;
+      font-weight: bold;
+      color: #333;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 150px;
+      transition: background-color 0.2s;
+    }
+    
+    .filter-header:hover {
+      background: #f5f5f5;
+    }
+    
+    .filter-header::after {
+      content: '▼';
+      font-size: 10px;
+      margin-left: 10px;
+      transition: transform 0.2s;
+    }
+    
+    .filter-control.expanded .filter-header::after {
+      transform: rotate(180deg);
+    }
+    
+    .filter-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 5px;
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      min-width: 250px;
+      max-width: 300px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-10px);
+      transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    
+    .filter-control:hover .filter-dropdown,
+    .filter-control.expanded .filter-dropdown {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    
+    .filter-dropdown .select-all {
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .filter-dropdown .company-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .filter-dropdown .company-item {
+      margin: 5px 0;
+      display: flex;
+      align-items: center;
+    }
+    
+    .filter-dropdown .company-item input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    
+    .filter-dropdown .company-item label {
+      cursor: pointer;
+      flex: 1;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -132,6 +231,22 @@
   <div id="chart-container">
     <div id="starburst"></div>
     <div class="tooltip" id="tooltip"></div>
+    <div class="filter-control" id="filter-control">
+      <div class="filter-header" id="filter-header">
+        <span>Filter by Company</span>
+      </div>
+      <div class="filter-dropdown" id="filter-dropdown">
+        <div class="select-all">
+          <label>
+            <input type="checkbox" id="select-all-companies" checked>
+            <strong>Select All</strong>
+          </label>
+        </div>
+        <div class="company-list" id="company-list">
+          <!-- Companies will be populated here -->
+        </div>
+      </div>
+    </div>
     <div class="legend" id="legend">
       <h3>Legend</h3>
       <div id="legend-content"></div>
@@ -175,11 +290,13 @@
     
     // --- GLOBAL VARIABLES ---
     let data = null;
+    let allData = null; // Store unfiltered data
     let root = null;
     let partition = null;
     let arc = null;
     let svg = null;
     let g = null;
+    let selectedCompanies = new Set(); // Current filter selection (multiple companies)
     
     // --- INITIALIZATION ---
     document.addEventListener('DOMContentLoaded', function() {
@@ -248,27 +365,32 @@
         }
         
         // Process data with lookups
-        data = processData(geojson, lookups);
-        console.log('Processed data:', data);
+        allData = processData(geojson, lookups);
+        console.log('Processed data:', allData);
         
         // If no company data, try alternative grouping
-        if (data.totalFacilities > 0 && Object.keys(data.companies).length === 0) {
+        if (allData.totalFacilities > 0 && Object.keys(allData.companies).length === 0) {
           console.warn('No company data found, grouping by facility type only');
-          data = processDataByType(geojson, lookups);
+          allData = processDataByType(geojson, lookups);
         }
         
         // Check if we have data
-        if (!data || data.totalFacilities === 0) {
+        if (!allData || allData.totalFacilities === 0) {
           throw new Error('No facilities found in the database');
         }
         
-        if (Object.keys(data.companies).length === 0) {
+        if (Object.keys(allData.companies).length === 0) {
           throw new Error('No company data found. Check if facilities have company_id values.');
         }
         
-        // Build hierarchy and render
-        buildHierarchy(data);
-        renderChart();
+        // Populate company filter checkboxes
+        populateCompanyFilter(allData);
+        
+        // Apply initial filter (all companies selected)
+        applyFilter(new Set(Object.keys(allData.companies)));
+        
+        // Set up filter event listeners
+        setupFilterListeners();
         
       } catch (error) {
         console.error('Error loading facilities:', error);
@@ -552,8 +674,9 @@
         initializeChart();
       }
       
-      // Clear existing content
-      g.selectAll("*").remove();
+      // Clear existing content - explicitly remove paths and text
+      g.selectAll("path").remove();
+      g.selectAll("text").remove();
       
       // Get all nodes (excluding root)
       const nodes = root.descendants().filter(d => d.depth > 0);
@@ -600,27 +723,7 @@
           zoomToNode(d);
         });
       
-      // Add text labels for companies and facility types
-      const labels = g.selectAll("text")
-        .data(nodes.filter(d => d.depth <= 2 && (d.x1 - d.x0) > 0.1))
-        .enter()
-        .append("text")
-        .attr("transform", d => {
-          const x = ((d.x0 + d.x1) / 2) * 180 / Math.PI;
-          const y = -(d.y0 + d.y1) / 2;
-          return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
-        })
-        .attr("dy", "0.35em")
-        .attr("text-anchor", d => (d.x0 + d.x1) / 2 < Math.PI ? "start" : "end")
-        .attr("font-size", d => d.depth === 1 ? "12px" : "10px")
-        .attr("font-weight", d => d.depth === 1 ? "bold" : "normal")
-        .attr("fill", "#333")
-        .text(d => {
-          const name = d.data.name;
-          const maxLength = d.depth === 1 ? 15 : 12;
-          return name.length > maxLength ? name.substring(0, maxLength) + "..." : name;
-        })
-        .style("pointer-events", "none");
+      // No text labels - all information shown only on hover
       
       // Update legend
       updateLegend(nodes);
@@ -764,6 +867,140 @@
       } else {
         existing.html(`<strong>Error loading data</strong><br>${message}<br><small>Check console for details</small>`);
       }
+    }
+    
+    // --- FILTER FUNCTIONS ---
+    function populateCompanyFilter(data) {
+      const companyList = document.getElementById('company-list');
+      const companies = Object.keys(data.companies).sort();
+      
+      // Clear existing list
+      companyList.innerHTML = '';
+      
+      // Add each company as a checkbox
+      companies.forEach(company => {
+        const item = document.createElement('div');
+        item.className = 'company-item';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `company-${company.replace(/\s+/g, '-')}`;
+        checkbox.value = company;
+        checkbox.checked = true; // All selected by default
+        
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.textContent = company;
+        
+        item.appendChild(checkbox);
+        item.appendChild(label);
+        companyList.appendChild(item);
+      });
+      
+      // Initialize selected companies set with all companies
+      selectedCompanies = new Set(companies);
+    }
+    
+    function setupFilterListeners() {
+      const filterControl = document.getElementById('filter-control');
+      const filterHeader = document.getElementById('filter-header');
+      const selectAllCheckbox = document.getElementById('select-all-companies');
+      const companyList = document.getElementById('company-list');
+      
+      // Toggle dropdown on header click
+      filterHeader.addEventListener('click', function(e) {
+        filterControl.classList.toggle('expanded');
+      });
+      
+      // Keep dropdown open when clicking inside it
+      const filterDropdown = document.getElementById('filter-dropdown');
+      filterDropdown.addEventListener('click', function(e) {
+        e.stopPropagation();
+      });
+      
+      // Close dropdown when clicking outside (optional - hover will handle it)
+      document.addEventListener('click', function(e) {
+        if (!filterControl.contains(e.target)) {
+          filterControl.classList.remove('expanded');
+        }
+      });
+      
+      // Select All checkbox
+      selectAllCheckbox.addEventListener('change', function(e) {
+        const checkboxes = companyList.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(cb => {
+          cb.checked = e.target.checked;
+        });
+        
+        if (e.target.checked) {
+          selectedCompanies = new Set(Array.from(checkboxes).map(cb => cb.value));
+        } else {
+          selectedCompanies.clear();
+        }
+        
+        applyFilter(selectedCompanies);
+      });
+      
+      // Individual company checkboxes
+      companyList.addEventListener('change', function(e) {
+        if (e.target.type === 'checkbox') {
+          const company = e.target.value;
+          
+          if (e.target.checked) {
+            selectedCompanies.add(company);
+          } else {
+            selectedCompanies.delete(company);
+          }
+          
+          // Update "Select All" checkbox state
+          const allCheckboxes = Array.from(companyList.querySelectorAll('input[type="checkbox"]'));
+          const allChecked = allCheckboxes.every(cb => cb.checked);
+          const noneChecked = allCheckboxes.every(cb => !cb.checked);
+          selectAllCheckbox.checked = allChecked;
+          selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+          
+          applyFilter(selectedCompanies);
+        }
+      });
+    }
+    
+    function applyFilter(companySet) {
+      if (!allData) {
+        console.error('No data available to filter');
+        return;
+      }
+      
+      // If no companies selected, show empty chart
+      if (!companySet || companySet.size === 0) {
+        data = {
+          companies: {},
+          totalFacilities: 0
+        };
+      } else if (companySet.size === Object.keys(allData.companies).length) {
+        // All companies selected, use all data
+        data = allData;
+      } else {
+        // Filter to only selected companies
+        const filteredCompanies = {};
+        let totalFacilities = 0;
+        
+        companySet.forEach(companyName => {
+          if (allData.companies[companyName]) {
+            filteredCompanies[companyName] = allData.companies[companyName];
+            totalFacilities += Object.values(allData.companies[companyName])
+              .reduce((sum, types) => sum + types.length, 0);
+          }
+        });
+        
+        data = {
+          companies: filteredCompanies,
+          totalFacilities: totalFacilities
+        };
+      }
+      
+      // Rebuild hierarchy and render with filtered data
+      buildHierarchy(data);
+      renderChart();
     }
   </script>
 </body>
