@@ -171,8 +171,6 @@
             map.whenReady(async function() {
                 console.log('Map initialized');
                 console.log('GeoServer URL:', GEOSERVER_URL);
-                // Load lookups first, then facilities
-                await loadFacilityTypeLookups();
                 console.log('Loading facilities from GeoServer WFS...');
                 loadFacilities();
             });
@@ -206,73 +204,6 @@
     
     // Current filter value
     let currentFilter = '';
-    
-    // Lookups for facility types and companies
-    let facilityTypeLookups = {};
-    let companyLookups = {};
-    let companyWebsiteLookups = {}; // Store company_id -> website_url mapping
-    
-    // Load facility type and company lookups
-    async function loadFacilityTypeLookups() {
-        try {
-            const response = await fetch('./data/lookups.json');
-            if (response.ok) {
-                const data = await response.json();
-                if (data.facilityTypes) {
-                    Object.keys(data.facilityTypes).forEach(key => {
-                        facilityTypeLookups[parseInt(key)] = data.facilityTypes[key];
-                        facilityTypeLookups[key] = data.facilityTypes[key];
-                    });
-                    console.log('Loaded facility type lookups:', facilityTypeLookups);
-                }
-                if (data.companies) {
-                    Object.keys(data.companies).forEach(key => {
-                        companyLookups[parseInt(key)] = data.companies[key];
-                        companyLookups[key] = data.companies[key];
-                    });
-                    console.log('Loaded company lookups:', companyLookups);
-                }
-            }
-        } catch (e) {
-            console.warn('Could not load lookups:', e);
-        }
-        
-        // Also load company website URLs from GeoServer
-        await loadCompanyWebsites();
-    }
-    
-    // Load company website URLs from GeoServer
-    async function loadCompanyWebsites() {
-        try {
-            const companyUrl = `${GEOSERVER_URL}/wfs?` +
-                `service=WFS&` +
-                `version=1.1.0&` +
-                `request=GetFeature&` +
-                `typeName=aginfo:company&` +
-                `outputFormat=application/json&` +
-                `maxFeatures=1000`;
-            
-            console.log('Fetching company websites from:', companyUrl);
-            const response = await fetch(companyUrl);
-            
-            if (response.ok) {
-                const geojson = await response.json();
-                if (geojson.features) {
-                    geojson.features.forEach(feature => {
-                        const props = feature.properties;
-                        if (props.company_id && props.website_url) {
-                            companyWebsiteLookups[props.company_id] = props.website_url;
-                            companyWebsiteLookups[String(props.company_id)] = props.website_url;
-                            companyWebsiteLookups[parseInt(props.company_id)] = props.website_url;
-                        }
-                    });
-                    console.log('Loaded company website lookups:', companyWebsiteLookups);
-                }
-            }
-        } catch (e) {
-            console.warn('Could not load company websites:', e);
-        }
-    }
     
     // Function to load facilities dynamically from GeoServer WFS
     async function loadFacilities(filterType = '') {
@@ -341,51 +272,35 @@
                     
                     const props = feature.properties;
                     
-                    // Get facility type name from lookup
+                    // Get facility type ID (display as-is since we don't have lookups)
                     const facilityTypeId = props.facility_type_id;
-                    const facilityType = facilityTypeLookups[facilityTypeId] || 
-                                       facilityTypeLookups[String(facilityTypeId)] ||
-                                       `Type ${facilityTypeId}`;
+                    const facilityType = facilityTypeId ? `Type ${facilityTypeId}` : null;
                     
-                    // Get company name from lookup
+                    // Get company ID (display as-is since we don't have lookups)
                     const companyId = props.company_id;
-                    const companyName = companyLookups[companyId] || 
-                                      companyLookups[String(companyId)] ||
-                                      companyLookups[parseInt(companyId)] ||
-                                      (companyId ? `Company ${companyId}` : 'Unknown Company');
-                    
-                    // Get company website URL
-                    const companyWebsite = companyWebsiteLookups[companyId] || 
-                                          companyWebsiteLookups[String(companyId)] ||
-                                          companyWebsiteLookups[parseInt(companyId)] ||
-                                          null;
+                    const companyName = companyId ? `Company ${companyId}` : null;
                     
                     // Debug: log first feature to see available properties
                     if (facilityMarkers.length === 0 && geojson.features.length > 0) {
                         console.log('Sample feature properties:', Object.keys(props));
-                        console.log('Facility type ID:', facilityTypeId, '-> Name:', facilityType);
-                        console.log('Company ID:', companyId, '-> Name:', companyName, '-> Website:', companyWebsite);
+                        console.log('Facility type ID:', facilityTypeId);
+                        console.log('Company ID:', companyId);
                     }
                     
-                    // Client-side filtering by facility type name
-                    if (filterType && filterType !== '' && facilityType !== filterType) {
+                    // Client-side filtering by facility type ID (if filter is set to a type ID)
+                    if (filterType && filterType !== '' && facilityTypeId && String(facilityTypeId) !== filterType) {
                         return;
                     }
                     
-                    // Build company link - use website URL if available, otherwise link to network map
-                    let companyLink;
-                    if (companyWebsite && companyWebsite.trim() !== '') {
-                        // Ensure URL has protocol
-                        let websiteUrl = companyWebsite.trim();
+                    // Get facility website URL from GeoServer
+                    const facilityWebsite = props.website_url || null;
+                    let facilityWebsiteLink = '';
+                    if (facilityWebsite && facilityWebsite.trim() !== '') {
+                        let websiteUrl = facilityWebsite.trim();
                         if (!websiteUrl.match(/^https?:\/\//i)) {
                             websiteUrl = 'https://' + websiteUrl;
                         }
-                        companyLink = `<a href="${escapeHtml(websiteUrl)}" target="_blank" style="color: #0066cc; text-decoration: none;">${escapeHtml(companyName)}</a>`;
-                    } else if (companyName && companyName !== 'Unknown Company') {
-                        // Fallback to network map if no website
-                        companyLink = `<a href="aginfo-network-map.html" target="_blank" style="color: #0066cc; text-decoration: none;">${escapeHtml(companyName)}</a>`;
-                    } else {
-                        companyLink = escapeHtml(companyName);
+                        facilityWebsiteLink = `<br><small><a href="${escapeHtml(websiteUrl)}" target="_blank" style="color: #0066cc; text-decoration: none;">🌐 Website</a></small>`;
                     }
                     
                     // Build popup content with escaped HTML to prevent XSS
@@ -394,8 +309,9 @@
                         ${escapeHtml(props.city || '')}, ${escapeHtml(props.state || '')}<br>
                         ${escapeHtml(props.address_line1 || '')}
                         ${facilityType ? '<br><small>Type: ' + escapeHtml(facilityType) + '</small>' : ''}
-                        ${companyName ? '<br><small>Company: ' + companyLink + '</small>' : ''}
+                        ${companyName ? '<br><small>Company: ' + escapeHtml(companyName) + '</small>' : ''}
                         ${props.description ? '<br><small>' + escapeHtml(props.description) + '</small>' : ''}
+                        ${facilityWebsiteLink}
                     `;
                     
                     // Create marker (note: GeoJSON uses [lng, lat], Leaflet uses [lat, lng])
