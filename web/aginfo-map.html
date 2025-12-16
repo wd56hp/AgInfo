@@ -51,7 +51,7 @@
   <div id="filter-control">
     <div style="margin-bottom: 10px;">
       <a href="aginfo-network-map.html" style="color: #0066cc; text-decoration: none; font-weight: bold; display: block; margin-bottom: 5px;">🔗 Network Map</a>
-      <a href="aginfo-starburst-chart.html" style="color: #0066cc; text-decoration: none; font-weight: bold; display: block;">📊 Starburst Chart</a>
+      <a href="aginfo-starburst.html" style="color: #0066cc; text-decoration: none; font-weight: bold; display: block;">📊 Starburst Chart</a>
     </div>
     <label for="facility-type-filter">Filter by Facility Type:</label>
     <select id="facility-type-filter">
@@ -171,6 +171,8 @@
             map.whenReady(async function() {
                 console.log('Map initialized');
                 console.log('GeoServer URL:', GEOSERVER_URL);
+                // Load lookups first, then facilities
+                await loadLookupsFromGeoServer();
                 console.log('Loading facilities from GeoServer WFS...');
                 loadFacilities();
             });
@@ -204,6 +206,53 @@
     
     // Current filter value
     let currentFilter = '';
+    
+    // Lookups for facility types and companies (loaded dynamically from GeoServer)
+    let facilityTypeLookups = {};
+    let companyLookups = {};
+    
+    // Load company and facility type lookups from GeoServer WFS
+    async function loadLookupsFromGeoServer() {
+        try {
+            // Load companies
+            const companyUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:company&outputFormat=application/json&maxFeatures=1000`;
+            const companyResponse = await fetch(companyUrl);
+            if (companyResponse.ok) {
+                const companyData = await companyResponse.json();
+                if (companyData.features) {
+                    companyData.features.forEach(f => {
+                        if (f.properties.company_id && f.properties.name) {
+                            companyLookups[f.properties.company_id] = f.properties.name;
+                            companyLookups[String(f.properties.company_id)] = f.properties.name;
+                        }
+                    });
+                    console.log('Loaded company lookups from GeoServer:', companyLookups);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load company lookups from GeoServer:', e);
+        }
+        
+        try {
+            // Load facility types
+            const typeUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:facility_type&outputFormat=application/json&maxFeatures=1000`;
+            const typeResponse = await fetch(typeUrl);
+            if (typeResponse.ok) {
+                const typeData = await typeResponse.json();
+                if (typeData.features) {
+                    typeData.features.forEach(f => {
+                        if (f.properties.facility_type_id && f.properties.name) {
+                            facilityTypeLookups[f.properties.facility_type_id] = f.properties.name;
+                            facilityTypeLookups[String(f.properties.facility_type_id)] = f.properties.name;
+                        }
+                    });
+                    console.log('Loaded facility type lookups from GeoServer:', facilityTypeLookups);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load facility type lookups from GeoServer:', e);
+        }
+    }
     
     // Function to load facilities dynamically from GeoServer WFS
     async function loadFacilities(filterType = '') {
@@ -272,13 +321,18 @@
                     
                     const props = feature.properties;
                     
-                    // Get facility type ID (display as-is since we don't have lookups)
+                    // Get facility type name from lookup
                     const facilityTypeId = props.facility_type_id;
-                    const facilityType = facilityTypeId ? `Type ${facilityTypeId}` : null;
+                    const facilityType = facilityTypeLookups[facilityTypeId] || 
+                                       facilityTypeLookups[String(facilityTypeId)] ||
+                                       (facilityTypeId ? `Type ${facilityTypeId}` : null);
                     
-                    // Get company ID (display as-is since we don't have lookups)
+                    // Get company name from lookup
                     const companyId = props.company_id;
-                    const companyName = companyId ? `Company ${companyId}` : null;
+                    const companyName = companyLookups[companyId] || 
+                                      companyLookups[String(companyId)] ||
+                                      companyLookups[parseInt(companyId)] ||
+                                      (companyId ? `Company ${companyId}` : null);
                     
                     // Debug: log first feature to see available properties
                     if (facilityMarkers.length === 0 && geojson.features.length > 0) {
@@ -287,8 +341,8 @@
                         console.log('Company ID:', companyId);
                     }
                     
-                    // Client-side filtering by facility type ID (if filter is set to a type ID)
-                    if (filterType && filterType !== '' && facilityTypeId && String(facilityTypeId) !== filterType) {
+                    // Client-side filtering by facility type name
+                    if (filterType && filterType !== '' && facilityType !== filterType) {
                         return;
                     }
                     
