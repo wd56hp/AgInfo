@@ -101,6 +101,14 @@
       margin-right: 8px;
       display: inline-block;
     }
+    .facility-popup a {
+      color: #0066cc !important;
+      text-decoration: underline !important;
+      cursor: pointer;
+    }
+    .facility-popup a:hover {
+      color: #0052a3 !important;
+    }
   </style>
 </head>
 <body>
@@ -577,14 +585,19 @@
               iconAnchor: [isHQ ? 8 : 6, isHQ ? 8 : 6]
             });
 
-            const marker = L.marker(facility.coordinates, { icon: icon })
-              .bindPopup(`
+            const popupContent = `
+              <div style="min-width: 150px;">
                 <strong>${escapeHtml(facility.name)}</strong><br>
                 ${escapeHtml(facility.type)}<br>
                 ${escapeHtml(facility.city)}, ${escapeHtml(facility.state)}<br>
                 <strong>${escapeHtml(companyName)}</strong><br>
-                ${isHQ ? '<strong>🏢 Headquarters</strong>' : ''}
-              `)
+                ${isHQ ? '<strong>🏢 Headquarters</strong><br>' : ''}
+                <a href="aginfo-starburst.html" target="_blank" style="color: #0066cc; text-decoration: underline; font-size: 12px; display: inline-block; margin-top: 5px;">📊 View Starburst Chart</a>
+              </div>
+            `;
+            
+            const marker = L.marker(facility.coordinates, { icon: icon })
+              .bindPopup(popupContent, { className: 'facility-popup' })
               .addTo(map);
 
             facilityMarkers.push(marker);

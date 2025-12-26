@@ -307,8 +307,10 @@
                     // Debug: log first feature to see available properties
                     if (facilityMarkers.length === 0 && geojson.features.length > 0) {
                         console.log('Sample feature properties:', Object.keys(props));
-                        console.log('Facility type ID:', facilityTypeId);
-                        console.log('Company ID:', companyId);
+                        console.log('Facility type ID:', props.facility_type_id);
+                        console.log('Facility type name:', facilityType);
+                        console.log('Company ID:', props.company_id);
+                        console.log('Company name:', companyName);
                     }
                     
                     // Client-side filtering by facility type name
