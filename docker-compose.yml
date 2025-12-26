@@ -16,6 +16,11 @@ services:
       - "${POSTGIS_CONTAINER_PORT:-5432}"
     ports:
       - "${SERVER_HOST_IP:-0.0.0.0}:${POSTGIS_HOST_PORT:-15433}:${POSTGIS_CONTAINER_PORT:-5432}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agadmin -d aginfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       aginfo-net:
         ipv4_address: 172.28.0.10
@@ -41,6 +46,9 @@ services:
     image: nginx:alpine
     container_name: aginfo-web
     restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
     volumes:
       - ./web:/usr/share/nginx/html:ro
     ports:

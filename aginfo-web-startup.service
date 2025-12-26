@@ -1,0 +1,15 @@
+[Unit]
+Description=AgInfo Web Container Startup Script
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /mnt/user/appdata/AgInfo/web-container-startup.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

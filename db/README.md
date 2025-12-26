@@ -12,7 +12,7 @@ The AgInfo database is a PostgreSQL database with PostGIS extension that stores 
 
 ## Schema Structure
 
-The database consists of 10 core tables organized into logical groups:
+The database consists of 15 core tables and 13 views organized into logical groups:
 
 ### Core Entity Tables
 
@@ -212,6 +212,184 @@ Junction table linking facilities to transport modes they support.
 
 ---
 
+### Parcel Data Tables
+
+#### 11. `parcels`
+Stores property parcel data with comprehensive property information and geospatial data. This table is typically populated from external parcel data sources (e.g., county assessor data).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT PRIMARY KEY | Auto-generated unique identifier |
+| `parcelnumb` | TEXT | Parcel number (unique) |
+| `geoid` | TEXT | Geographic identifier |
+| `owner` | TEXT | Property owner name |
+| `usedesc` | TEXT | Property use description (e.g., 'Agricultural Use', 'Farm Homesite') |
+| `county` | TEXT | County name |
+| `state2` | TEXT | State code |
+| `lat` | DOUBLE PRECISION | Latitude |
+| `lon` | DOUBLE PRECISION | Longitude |
+| `geom` | geometry(Point, 4326) | PostGIS point geometry |
+| `ll_gisacre` | NUMERIC | GIS-calculated acres |
+| `agval` | NUMERIC | Agricultural value |
+| `parval` | NUMERIC | Total parcel value |
+| ... | ... | (Many additional property attributes) |
+
+**Key Features**:
+- Comprehensive property data including ownership, valuation, and legal descriptions
+- Geospatial support with PostGIS geometry column
+- Indexed on `parcelnumb` (unique), `geoid`, `county/state`, and `geom` (spatial index)
+
+**Indexes**:
+- Primary key on `id`
+- Unique index on `parcelnumb`
+- B-tree indexes on `geoid`, `county/state`
+- GIST spatial index on `geom`
+
+---
+
+#### 12. `parcels_rush_stg`
+Staging table for importing Rush County parcel data before merging into the main `parcels` table. Has the same structure as `parcels` but without the `id` identity column and `geom` column.
+
+**Purpose**: Allows bulk import and data validation before merging into production `parcels` table.
+
+**Indexes**:
+- Unique index on `parcelnumb`
+- B-tree indexes on `geoid`, `county/state`
+
+---
+
+## Database Views
+
+The database includes several views for common queries and analysis:
+
+#### 1. `facility_with_names`
+Facility view with company and facility type names joined for GeoServer use. See `README_GEOSERVER_VIEW.md` for details.
+
+---
+
+#### 2. `beaver_8_mile`
+Shows all parcels within 8 miles of the Beaver Grain Corp facility (parcel ID 10746).
+
+**Columns**: All columns from `parcels` table plus a `gid` row number.
+
+**Use Case**: Identify all properties within the service area of the Beaver Grain facility.
+
+---
+
+#### 3. `beaver_8_mile_ag`
+Shows agricultural parcels within 8 miles of the Beaver Grain Corp facility, including distance calculation.
+
+**Columns**: All columns from `parcels` plus:
+- `gid`: Row number
+- `distance_miles`: Distance from facility in miles
+
+**Filter**: Only includes parcels where `usedesc` is 'Agricultural Use' or 'Farm Homesite'.
+
+**Use Case**: Identify agricultural customers within the service area.
+
+---
+
+#### 4. `facility_parcels_8mi`
+Shows all parcels within 8 miles of active grain elevator facilities (United Ag Services companies).
+
+**Columns**: All columns from both `facility` and `parcels` tables, plus:
+- `gid`: Row number
+- `facility_name`: Name of the facility
+- `distance_miles`: Distance from facility in miles
+
+**Filter**: 
+- Active facilities only (`status = 'ACTIVE'`)
+- Grain elevators only (`facility_type_id = 1`)
+- United Ag Services companies (`company_id IN (1, 8)`)
+
+**Use Case**: Identify all properties within service areas of grain elevator facilities.
+
+---
+
+#### 5. `facility_customers_8mi`
+Aggregates parcel owners within 8 miles of facilities, grouped by facility and owner.
+
+**Columns**:
+- `facility_name`: Name of the facility
+- `owner`: Parcel owner name
+- `mailadd`, `mail_address2`, `mail_city`, `mail_state2`, `mail_zip`: Mailing address
+- `total_ll_gisacre`: Sum of GIS acres for all parcels owned
+- `parcel_count`: Number of parcels owned
+
+**Use Case**: Generate customer lists for marketing or analysis.
+
+---
+
+#### 6. `facility_customers_8mi_ag`
+Aggregates agricultural parcel owners within 8 miles of facilities, grouped by facility and owner.
+
+**Columns**: Same as `facility_customers_8mi` plus:
+- `facility_id`: Facility identifier
+
+**Filter**: Only includes parcels where `usedesc` is 'Agricultural Use' or 'Farm Homesite'.
+
+**Use Case**: Generate agricultural customer lists for marketing or analysis.
+
+---
+
+### Crop Data Views
+
+#### 7. `crop_summary_by_region_year`
+Complete crop data summary by region and year with crop details.
+
+**Columns**: All columns from `crop_acres`, `region`, and `crop_type` tables.
+
+**Use Case**: View all crop data for a region in a specific year.
+
+---
+
+#### 8. `crop_totals_by_region`
+Total crop acres by region aggregated across all years.
+
+**Columns**: Region info, crop info, `total_acres`, `years_count`, `first_year`, `last_year`.
+
+**Use Case**: See total historical crop production by region.
+
+---
+
+#### 9. `crop_totals_by_year`
+Total crop acres by year aggregated across all regions.
+
+**Columns**: Year, crop info, `total_acres`, `regions_count`.
+
+**Use Case**: See total crop production trends over time.
+
+---
+
+#### 10. `top_crops_by_region`
+Ranked crops by acres for each region, ordered by most recent year.
+
+**Columns**: Region info, year, crop info, acres, `rank`.
+
+**Use Case**: Identify the most important crops for each region.
+
+---
+
+#### 11. `crop_trends_by_region`
+Year-over-year crop acreage trends with change calculations.
+
+**Columns**: Region info, crop info, year, acres, `previous_year_acres`, `change_acres`, `change_percent`.
+
+**Use Case**: Analyze crop acreage trends and changes over time.
+
+---
+
+#### 12. `row_crops_by_region_year`
+Filtered view showing only row crops (corn, soybeans, wheat, etc.).
+
+**Columns**: Region info, year, crop info, acres.
+
+**Filter**: Only crops where `is_row_crop = TRUE`.
+
+**Use Case**: Focus analysis on major row crops.
+
+---
+
 ## Entity Relationship Diagram
 
 ```
@@ -226,6 +404,12 @@ company (1) ────< (many) facility
                       └───< (many) facility_transport_mode ────> (many) transport_mode
 
 facility_type (1) ────< (many) facility
+
+parcels (standalone table with geospatial relationships to facilities via views)
+
+region (1) ────< (many) crop_acres ────> (many) crop_type
+
+region (1) ────< (many) crop_acres ────> (many) crop_type
 ```
 
 ---
@@ -334,6 +518,101 @@ WHERE f.status = 'ACTIVE'
 GROUP BY f.facility_id, f.name, c.name, ft.name, f.latitude, f.longitude, f.status;
 ```
 
+### Find parcels within 8 miles of a facility
+
+```sql
+-- Using the facility_parcels_8mi view
+SELECT 
+    facility_name,
+    owner,
+    parcelnumb,
+    usedesc,
+    ll_gisacre,
+    distance_miles
+FROM facility_parcels_8mi
+WHERE facility_name = 'Alexander'
+ORDER BY distance_miles;
+```
+
+### Get customer list for a facility
+
+```sql
+-- Using the facility_customers_8mi_ag view (agricultural customers only)
+SELECT 
+    facility_name,
+    owner,
+    mailadd,
+    mail_city,
+    mail_state2,
+    mail_zip,
+    total_ll_gisacre,
+    parcel_count
+FROM facility_customers_8mi_ag
+WHERE facility_name = 'Alexander'
+ORDER BY total_ll_gisacre DESC;
+```
+
+### Find agricultural parcels near Beaver Grain facility
+
+```sql
+-- Using the beaver_8_mile_ag view
+SELECT 
+    owner,
+    parcelnumb,
+    usedesc,
+    ll_gisacre,
+    distance_miles
+FROM beaver_8_mile_ag
+ORDER BY distance_miles;
+```
+
+### View crop data by region and year
+
+```sql
+-- Using the crop_summary_by_region_year view
+SELECT 
+    region_name,
+    year,
+    crop_name,
+    acres
+FROM crop_summary_by_region_year
+WHERE region_name = 'Rush County'
+  AND year = 2024
+ORDER BY acres DESC;
+```
+
+### Analyze crop trends over time
+
+```sql
+-- Using the crop_trends_by_region view
+SELECT 
+    region_name,
+    crop_name,
+    year,
+    acres,
+    change_acres,
+    change_percent
+FROM crop_trends_by_region
+WHERE region_name = 'Rush County'
+  AND crop_name = 'Corn'
+ORDER BY year;
+```
+
+### Compare top crops across regions
+
+```sql
+-- Using the top_crops_by_region view
+SELECT 
+    region_name,
+    crop_name,
+    acres,
+    rank
+FROM top_crops_by_region
+WHERE rank <= 5
+  AND year = 2024
+ORDER BY region_name, rank;
+```
+
 ---
 
 ## Database Initialization
@@ -341,8 +620,14 @@ GROUP BY f.facility_id, f.name, c.name, ft.name, f.latitude, f.longitude, f.stat
 The database is initialized through SQL scripts in `db/init/`:
 
 1. **01_enable_postgis.sql**: Enables PostGIS and PostGIS Topology extensions
-2. **02_schema_aginfo.sql**: Creates all tables, triggers, and seed data for lookup tables
+2. **02_schema_aginfo.sql**: Creates all core facility/company tables, triggers, and seed data for lookup tables
 3. **03_seed_united_ag_alexander.sql**: Example seed data for United Ag Services - Alexander location
+4. **04_facility_view_with_names.sql**: Creates the `facility_with_names` view for GeoServer
+5. **05_schema_parcels.sql**: Creates the `parcels` table for property parcel data
+6. **06_schema_parcels_rush_stg.sql**: Creates the `parcels_rush_stg` staging table
+7. **07_views_parcels.sql**: Creates views for parcel analysis and facility-customer relationships
+8. **08_schema_crop_data.sql**: Creates crop data tables (`crop_type`, `region`, `crop_acres`)
+9. **09_views_crop_data.sql**: Creates views for crop data analysis and trends
 
 These scripts run automatically when the PostGIS container is first created.
 
@@ -377,4 +662,6 @@ GeoServer can publish the `facility` table as a WMS/WFS layer for mapping applic
 ## Version History
 
 - **v1.0**: Initial schema with 10 core tables, PostGIS integration, and automatic geometry triggers
+- **v1.1**: Added `parcels` and `parcels_rush_stg` tables, plus 6 views for parcel analysis and facility-customer relationships
+- **v1.2**: Added crop data tables (`crop_type`, `region`, `crop_acres`) and 6 views for CDL (Cropland Data Layer) analysis
 

@@ -4,6 +4,9 @@
 db/data/
 geoserver/data_dir/
 
+# Generated lookup files (created from database)
+web/data/lookups.json
+
 # Environment files (DO NOT COMMIT SECRETS)
 .env
 *.env
