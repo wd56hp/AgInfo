@@ -207,51 +207,17 @@
     // Current filter value
     let currentFilter = '';
     
-    // Lookups for facility types and companies (loaded dynamically from GeoServer)
+    // Lookups for facility types and companies (fallback only - names should come from GeoServer view)
     let facilityTypeLookups = {};
     let companyLookups = {};
     
-    // Load company and facility type lookups from GeoServer WFS
+    // Load company and facility type lookups from database via GeoServer SQL view
+    // The facility layer should use facility_with_names view which includes company_name and facility_type_name
+    // This function is kept for fallback, but ideally names come directly from the GeoServer view
     async function loadLookupsFromGeoServer() {
-        try {
-            // Load companies
-            const companyUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:company&outputFormat=application/json&maxFeatures=1000`;
-            const companyResponse = await fetch(companyUrl);
-            if (companyResponse.ok) {
-                const companyData = await companyResponse.json();
-                if (companyData.features) {
-                    companyData.features.forEach(f => {
-                        if (f.properties.company_id && f.properties.name) {
-                            companyLookups[f.properties.company_id] = f.properties.name;
-                            companyLookups[String(f.properties.company_id)] = f.properties.name;
-                        }
-                    });
-                    console.log('Loaded company lookups from GeoServer:', companyLookups);
-                }
-            }
-        } catch (e) {
-            console.warn('Could not load company lookups from GeoServer:', e);
-        }
-        
-        try {
-            // Load facility types
-            const typeUrl = `${GEOSERVER_URL}/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=aginfo:facility_type&outputFormat=application/json&maxFeatures=1000`;
-            const typeResponse = await fetch(typeUrl);
-            if (typeResponse.ok) {
-                const typeData = await typeResponse.json();
-                if (typeData.features) {
-                    typeData.features.forEach(f => {
-                        if (f.properties.facility_type_id && f.properties.name) {
-                            facilityTypeLookups[f.properties.facility_type_id] = f.properties.name;
-                            facilityTypeLookups[String(f.properties.facility_type_id)] = f.properties.name;
-                        }
-                    });
-                    console.log('Loaded facility type lookups from GeoServer:', facilityTypeLookups);
-                }
-            }
-        } catch (e) {
-            console.warn('Could not load facility type lookups from GeoServer:', e);
-        }
+        // Names should come directly from facility_with_names view via GeoServer
+        // This is just a placeholder for potential fallback scenarios
+        console.log('Using company_name and facility_type_name directly from GeoServer view');
     }
     
     // Function to load facilities dynamically from GeoServer WFS
@@ -321,18 +287,22 @@
                     
                     const props = feature.properties;
                     
-                    // Get facility type name from lookup
-                    const facilityTypeId = props.facility_type_id;
-                    const facilityType = facilityTypeLookups[facilityTypeId] || 
-                                       facilityTypeLookups[String(facilityTypeId)] ||
-                                       (facilityTypeId ? `Type ${facilityTypeId}` : null);
+                    // Get facility type name directly from GeoServer (from SQL view)
+                    // Try facility_type_name first (from view), then fallback to lookup
+                    const facilityType = props.facility_type_name || 
+                                       (props.facility_type_id ? 
+                                        (facilityTypeLookups[props.facility_type_id] || 
+                                         facilityTypeLookups[String(props.facility_type_id)] ||
+                                         `Type ${props.facility_type_id}`) : null);
                     
-                    // Get company name from lookup
-                    const companyId = props.company_id;
-                    const companyName = companyLookups[companyId] || 
-                                      companyLookups[String(companyId)] ||
-                                      companyLookups[parseInt(companyId)] ||
-                                      (companyId ? `Company ${companyId}` : null);
+                    // Get company name directly from GeoServer (from SQL view)
+                    // Try company_name first (from view), then fallback to lookup
+                    const companyName = props.company_name || 
+                                      (props.company_id ? 
+                                       (companyLookups[props.company_id] || 
+                                        companyLookups[String(props.company_id)] ||
+                                        companyLookups[parseInt(props.company_id)] ||
+                                        `Company ${props.company_id}`) : null);
                     
                     // Debug: log first feature to see available properties
                     if (facilityMarkers.length === 0 && geojson.features.length > 0) {
