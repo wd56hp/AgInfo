@@ -646,9 +646,46 @@ GeoServer can publish the `facility` table as a WMS/WFS layer for mapping applic
 
 ---
 
+## Migration Validation
+
+Before applying schema changes to production, use the validation system to ensure data integrity:
+
+### Quick Validation
+
+```bash
+# Pre-migration checks
+docker exec aginfo-postgis psql -U agadmin -d aginfo -f /tmp/validate/01_pre_migration_checks.sql
+
+# Post-migration checks  
+docker exec aginfo-postgis psql -U agadmin -d aginfo -f /tmp/validate/02_post_migration_checks.sql
+```
+
+### Automated Validation
+
+```bash
+# Linux/Mac
+./db/validate/validate_migration.sh db/init/08_schema_crop_data.sql
+
+# Windows (PowerShell)
+.\db\validate\validate_migration.ps1 -MigrationFile "db\init\08_schema_crop_data.sql"
+```
+
+The validation system checks:
+- **Data Integrity**: Orphaned records, broken foreign keys
+- **Data Validation**: Geometry validity, coordinate ranges
+- **Constraint Integrity**: Foreign keys, unique constraints
+- **Index Integrity**: Critical indexes exist
+- **View Integrity**: All views are queryable
+- **Record Counts**: Baseline comparison to detect data loss
+
+See `db/validate/README.md` for full documentation.
+
+---
+
 ## Maintenance Notes
 
 - **Backups**: Regular backups of `db/data/` directory recommended
+- **Migration Validation**: Always run validation checks before/after schema changes (see above)
 - **Indexes**: Consider adding indexes on frequently queried columns:
   - `facility.status`
   - `facility.company_id`
