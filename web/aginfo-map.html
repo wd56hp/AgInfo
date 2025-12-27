@@ -45,6 +45,19 @@
       border: 1px solid #ccc;
       border-radius: 3px;
     }
+    #version-display {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 5px 10px;
+      border-radius: 3px;
+      font-size: 11px;
+      color: #666;
+      font-family: Arial, sans-serif;
+      z-index: 1500;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
   </style>
 </head>
 <body>
@@ -68,7 +81,11 @@
     </select>
   </div>
   <div id="map"></div>
+  <div id="version-display"></div>
 
+  <!-- Version info -->
+  <script src="js/version.js"></script>
+  
   <!-- Leaflet JS -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -76,6 +93,10 @@
   ></script>
 
   <script>
+    // Display version
+    if (typeof APP_VERSION !== 'undefined') {
+      document.getElementById('version-display').textContent = 'v' + APP_VERSION;
+    }
     // --- CONFIG SECTION: change these values as needed ---
 
     // Dynamically detect host from current page URL

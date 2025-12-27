@@ -140,6 +140,10 @@
     </div>
   </div>
   <div id="map"></div>
+  <div id="version-display"></div>
+
+  <!-- Version info -->
+  <script src="js/version.js"></script>
 
   <!-- Leaflet JS -->
   <script
@@ -148,6 +152,11 @@
   ></script>
 
   <script>
+    // Display version
+    if (typeof APP_VERSION !== 'undefined') {
+      document.getElementById('version-display').textContent = 'v' + APP_VERSION;
+    }
+    
     // --- CONFIG SECTION ---
     const currentHost = window.location.hostname;
     const GEOSERVER_PORT = 8090;

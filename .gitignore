@@ -81,6 +81,12 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+aginfo_django/staticfiles/
+aginfo_django/media/
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
 
 # Flask stuff:
 instance/

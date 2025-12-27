@@ -58,6 +58,37 @@ services:
       aginfo-net:
         ipv4_address: 172.28.0.30
 
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile.django
+    container_name: aginfo-django
+    restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-aginfo}
+      - POSTGRES_USER=${POSTGRES_USER:-agadmin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_HOST=172.28.0.10
+      - POSTGRES_PORT=5432
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-True}
+      - GDAL_LIBRARY_PATH=/usr/lib/libgdal.so
+      - GEOS_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgeos_c.so
+    volumes:
+      - .:/app
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${DJANGO_HOST_PORT:-8000}:${DJANGO_CONTAINER_PORT:-8000}"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.40
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput --clear || true &&
+             python manage.py runserver 0.0.0.0:8000"
+
 networks:
   aginfo-net:
     driver: bridge
