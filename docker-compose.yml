@@ -75,7 +75,7 @@ services:
       - POSTGRES_PORT=5432
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
       - DJANGO_DEBUG=${DJANGO_DEBUG:-True}
-      - GDAL_LIBRARY_PATH=/usr/lib/libgdal.so
+      - GDAL_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgdal.so
       - GEOS_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgeos_c.so
     volumes:
       - .:/app

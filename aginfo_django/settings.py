@@ -104,8 +104,26 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # GeoDjango settings
+# Auto-detect GDAL library path if not set or path doesn't exist
 GDAL_LIBRARY_PATH = os.environ.get('GDAL_LIBRARY_PATH')
+if not GDAL_LIBRARY_PATH or not os.path.exists(GDAL_LIBRARY_PATH):
+    # Try common locations
+    for path in ['/usr/lib/x86_64-linux-gnu/libgdal.so', '/usr/lib/libgdal.so']:
+        if os.path.exists(path):
+            GDAL_LIBRARY_PATH = path
+            break
+    else:
+        GDAL_LIBRARY_PATH = None
+
 GEOS_LIBRARY_PATH = os.environ.get('GEOS_LIBRARY_PATH')
+if not GEOS_LIBRARY_PATH or not os.path.exists(GEOS_LIBRARY_PATH):
+    # Try common locations
+    for path in ['/usr/lib/x86_64-linux-gnu/libgeos_c.so', '/usr/lib/libgeos_c.so']:
+        if os.path.exists(path):
+            GEOS_LIBRARY_PATH = path
+            break
+    else:
+        GEOS_LIBRARY_PATH = None
 
 # Admin site customization
 ADMIN_SITE_HEADER = 'AgInfo Administration'
