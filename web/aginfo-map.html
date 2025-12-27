@@ -84,8 +84,8 @@
     const GEOSERVER_PORT = 8090; // GeoServer port from docker-compose.yml
     const GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
 
-    // Workspace:name of your WMS layer (e.g. aginfo:facility)
-    const WMS_LAYER_NAME = "aginfo:facility";
+    // Workspace:name of your WMS layer - using facility_with_names view for complete data
+    const WMS_LAYER_NAME = "aginfo:facility_with_names";
 
     // Initial map center (Kansas) and zoom
     const INITIAL_CENTER = [38.5, -98.5]; // [lat, lon]

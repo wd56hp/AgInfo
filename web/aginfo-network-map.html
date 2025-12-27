@@ -152,7 +152,8 @@
     const currentHost = window.location.hostname;
     const GEOSERVER_PORT = 8090;
     const GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
-    const WMS_LAYER_NAME = "aginfo:facility";
+    // Using facility_with_names view for complete data with company and facility type names
+    const WMS_LAYER_NAME = "aginfo:facility_with_names";
     const INITIAL_CENTER = [38.5, -98.5]; // Kansas
     const INITIAL_ZOOM = 7;
 

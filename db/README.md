@@ -263,7 +263,26 @@ Staging table for importing Rush County parcel data before merging into the main
 The database includes several views for common queries and analysis:
 
 #### 1. `facility_with_names`
-Facility view with company and facility type names joined for GeoServer use. See `README_GEOSERVER_VIEW.md` for details.
+**Primary view for GeoServer and web applications** - Comprehensive facility view with all related data joined together.
+
+This view joins the `facility`, `company`, and `facility_type` tables to provide a single source of truth for all facility information needed for map rendering. It eliminates the need for separate lookup queries or client-side joins.
+
+**Key Features**:
+- Includes company name (`company_name`) and company details (website, phone)
+- Includes facility type name (`facility_type_name`) and type metadata (is_producer, is_consumer, is_storage)
+- Contains all facility fields (address, location, contact info, etc.)
+- Includes PostGIS geometry (`geom`) for spatial queries
+- Uses LEFT JOINs to include facilities even if company or facility_type is missing
+
+**Columns**: 
+- Facility identifiers: `facility_id`, `name`, `description`, `status`
+- Company info: `company_id`, `company_name`, `company_website_url`, `company_phone_main`
+- Facility type info: `facility_type_id`, `facility_type_name`, `facility_type_description`, `facility_type_is_producer`, `facility_type_is_consumer`, `facility_type_is_storage`
+- Address: `address_line1`, `address_line2`, `city`, `county`, `state`, `postal_code`
+- Location: `latitude`, `longitude`, `geom`
+- Metadata: `opened_year`, `closed_year`, `website_url`, `phone_main`, `email_main`, `notes`
+
+**Recommended Use**: Configure GeoServer to use this view (`facility_with_names`) instead of the `facility` table as the data source for the `aginfo:facility` layer. This ensures all web applications receive complete, readable data without requiring additional lookups.
 
 ---
 
@@ -638,11 +657,20 @@ These scripts run automatically when the PostGIS container is first created.
 The database is designed to work with GeoServer for map visualization:
 
 - **Workspace**: `aginfo`
-- **Layer**: `facility` (table name)
+- **Recommended Layer Source**: `facility_with_names` (view) - **Use this view instead of the `facility` table**
+- **Alternative Layer Source**: `facility` (table) - Only use if view is not available
 - **Geometry Column**: `geom`
 - **SRID**: 4326 (WGS84)
 
-GeoServer can publish the `facility` table as a WMS/WFS layer for mapping applications.
+**Recommended Configuration**: 
+GeoServer should be configured to use the `facility_with_names` view as the data source for the `aginfo:facility` layer. This view includes all company and facility type names pre-joined, eliminating the need for client-side lookups and ensuring consistent, readable data across all web applications.
+
+**Benefits of using the view**:
+- All related data (company names, facility type names) is included in a single query
+- Reduces client-side processing and lookup complexity
+- Ensures consistency across all applications
+- Better performance by leveraging database joins
+- Single source of truth for facility display data
 
 ---
 

@@ -11,7 +11,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const currentHost = window.location.hostname;
 const currentProtocol = window.location.protocol; // Detects http: or https:
 const GEOSERVER_URL = `${currentProtocol}//${currentHost}:8090/geoserver`;
-const WFS_LAYER = 'aginfo:facility';
+// Using facility_with_names view for complete data with company and facility type names
+const WFS_LAYER = 'aginfo:facility_with_names';
 
 // HTML escaping function to prevent XSS vulnerabilities
 function escapeHtml(text) {
