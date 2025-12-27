@@ -11,7 +11,13 @@ AgInfo is a comprehensive agricultural facility and services information system 
 
 ## Quick Start
 
-1. **Start all services**:
+1. **Configure environment** (optional):
+   ```bash
+   cp .env.example .env
+   # Edit .env with your preferred settings (ports, passwords, etc.)
+   ```
+
+2. **Start all services**:
    ```bash
    docker-compose up -d
    ```

@@ -61,19 +61,25 @@ This will create Django's internal tables (for admin, sessions, etc.) without mo
 
 ### Environment Variables
 
-The Django service uses the following environment variables (set in `docker-compose.yml` or `.env` file):
+Environment variables can be set in a `.env` file (copy from `.env.example`). The Django service uses:
 
+**Database Connection:**
 - `POSTGRES_DB`: Database name (default: `aginfo`)
 - `POSTGRES_USER`: Database user (default: `agadmin`)
 - `POSTGRES_PASSWORD`: Database password (default: `changeme`)
 - `POSTGRES_HOST`: Database host (default: `172.28.0.10` - postgis container IP)
 - `POSTGRES_PORT`: Database port (default: `5432`)
-- `DJANGO_SECRET_KEY`: Django secret key (change in production!)
-- `DJANGO_DEBUG`: Debug mode (default: `True`)
 
-### Port Configuration
+**Django Configuration:**
+- `DJANGO_SECRET_KEY`: Django secret key (**change in production!**)
+  - Generate a new key: `python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'`
+- `DJANGO_DEBUG`: Debug mode (`True` for development, `False` for production)
 
-The Django service runs on port 8000 by default. You can change this using the `DJANGO_HOST_PORT` environment variable in `docker-compose.yml`.
+**Port Configuration:**
+- `DJANGO_HOST_PORT`: External port for Django admin (default: `8000`)
+- `DJANGO_CONTAINER_PORT`: Internal container port (default: `8000`)
+
+See `.env.example` for all available configuration options.
 
 ## Usage
 

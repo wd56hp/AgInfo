@@ -10,6 +10,8 @@ web/data/lookups.json
 # Environment files (DO NOT COMMIT SECRETS)
 .env
 *.env
+# But allow .env.example as a template
+!.env.example
 
 # GeoServer cache files
 geoserver/data_dir/gwc/
