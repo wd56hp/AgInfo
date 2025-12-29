@@ -17,6 +17,9 @@ unraid_sync.ps1
 unraid_pull.sh
 unraid_pull.ps1
 
+# Sync log files
+sync_*.log
+
 # Sync temp files/folders
 *.tmp
 *.temp
