@@ -4,6 +4,13 @@
 db/data/
 geoserver/data_dir/
 
+# Backup directories and files
+backups/
+*.backup
+*.dump
+*.sql.gz
+*.tar.gz
+
 # Sync scripts (local only, shouldn't be synced to git)
 unraid_sync.sh
 unraid_sync.ps1
