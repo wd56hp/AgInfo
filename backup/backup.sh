@@ -18,16 +18,41 @@ mkdir -p "$LOG_DIR"
 
 # Logging function
 log() {
+    local message="$1"
     local level="${2:-INFO}"
-    local message="[$(date +'%Y-%m-%d %H:%M:%S')] [$level] $1"
-    echo "$message" | tee -a "$LOG_FILE"
+    local log_message="[$(date +'%Y-%m-%d %H:%M:%S')] [$level] $message"
+    echo "$log_message" | tee -a "$LOG_FILE"
 }
 
 # Load .env file if it exists (from project root)
 ENV_PATH="$PROJECT_ROOT/.env"
 if [ -f "$ENV_PATH" ]; then
     log "Loading environment variables from .env file"
-    export $(grep -v '^#' "$ENV_PATH" | grep -v '^$' | xargs)
+    # Temporarily disable exit on error for .env loading
+    set +e
+    # Use a safer method to load .env file, handling BOM and encoding issues
+    # Remove BOM first, then process lines
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Remove BOM and carriage returns, skip lines starting with invalid characters
+        line=$(echo "$line" | sed '1s/^\xEF\xBB\xBF//' | tr -d '\r')
+        # Skip if line starts with # (comment) or is empty
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$line" ]] && continue
+        # Check if line contains = and doesn't start with special characters
+        [[ "$line" != *"="* ]] && continue
+        [[ "$line" =~ ^[^a-zA-Z_] ]] && continue
+        # Extract key and value
+        key="${line%%=*}"
+        value="${line#*=}"
+        # Remove leading/trailing whitespace
+        key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/^["'\'']//;s/["'\'']$//')
+        # Export if key is valid (alphanumeric and underscore only)
+        if [[ -n "$key" ]] && [[ "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+            export "$key=$value" 2>/dev/null || true
+        fi
+    done < <(sed '1s/^\xEF\xBB\xBF//' "$ENV_PATH" 2>/dev/null || cat "$ENV_PATH")
+    set -e
 fi
 
 # Default values (use environment variable if set, otherwise default)
