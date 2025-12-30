@@ -8,8 +8,13 @@ set +e
 UNRAID_HOST="root@172.16.101.20"
 UNRAID_PATH="/mnt/user/appdata/AgInfo"
 
+# Get script directory and ensure logs directory exists
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
+
 START_TIME=$(date +%s)
-LOG_FILE="sync_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="$LOG_DIR/sync_$(date +%Y%m%d_%H%M%S).log"
 
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"

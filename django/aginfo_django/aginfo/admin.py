@@ -2,7 +2,6 @@
 Django admin configuration for AgInfo models
 """
 from django.contrib.gis import admin
-from django.contrib.gis.admin import OSMGeoAdmin
 from django.utils.html import format_html
 from .models import (
     Company, FacilityType, Facility, FacilityContact,
@@ -26,8 +25,11 @@ class FacilityTypeAdmin(admin.ModelAdmin):
 
 
 @admin.register(Facility)
-class FacilityAdmin(OSMGeoAdmin):
+class FacilityAdmin(admin.GISModelAdmin):
     """Facility admin with map widget for geometry"""
+    default_lat = 40.0  # Default latitude (center of US)
+    default_lon = -100.0  # Default longitude (center of US)
+    default_zoom = 4
     list_display = ('name', 'company', 'facility_type', 'city', 'state', 'status', 'view_location')
     list_filter = ('status', 'facility_type', 'state', 'company')
     search_fields = ('name', 'city', 'address_line1', 'company__name')
