@@ -7,7 +7,7 @@ AgInfo is a comprehensive agricultural facility and services information system 
 - **Interactive Web Maps**: Leaflet-based maps for visualizing facilities
 - **GeoServer Integration**: WMS/WFS services for spatial data
 - **PostGIS Database**: PostgreSQL with PostGIS extension for geospatial data
-- **Django Admin Interface**: Web-based CRUD interface for managing data (see [README_DJANGO.md](README_DJANGO.md))
+- **Django Admin Interface**: Web-based CRUD interface for managing data (see [django/README_DJANGO.md](django/README_DJANGO.md))
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ AgInfo is a comprehensive agricultural facility and services information system 
 3. **Access GeoServer**: `http://your-server:8090/geoserver`
 
 4. **Access Django Admin** (after setup): `http://your-server:8000/admin`
-   - See [README_DJANGO.md](README_DJANGO.md) for setup instructions
+   - See [django/README_DJANGO.md](django/README_DJANGO.md) for setup instructions
 
 ## Services
 

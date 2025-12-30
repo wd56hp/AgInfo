@@ -60,7 +60,7 @@ services:
 
   django:
     build:
-      context: .
+      context: ./django
       dockerfile: Dockerfile.django
     container_name: aginfo-django
     restart: unless-stopped
@@ -78,7 +78,7 @@ services:
       - GDAL_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgdal.so
       - GEOS_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgeos_c.so
     volumes:
-      - .:/app
+      - ./django:/app
     ports:
       - "${SERVER_HOST_IP:-0.0.0.0}:${DJANGO_HOST_PORT:-8000}:${DJANGO_CONTAINER_PORT:-8000}"
     networks:
