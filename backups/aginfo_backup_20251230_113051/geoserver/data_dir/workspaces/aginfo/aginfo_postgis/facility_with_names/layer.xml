@@ -1,0 +1,16 @@
+<layer>
+  <name>facility_with_names</name>
+  <id>LayerInfoImpl-2e6e2e97:19b6025db70:-7ffb</id>
+  <type>VECTOR</type>
+  <defaultStyle>
+    <id>StyleInfoImpl-2ece8511:19b0a0ba0e1:-8000</id>
+  </defaultStyle>
+  <resource class="featureType">
+    <id>FeatureTypeInfoImpl-2e6e2e97:19b6025db70:-7ffc</id>
+  </resource>
+  <attribution>
+    <logoWidth>0</logoWidth>
+    <logoHeight>0</logoHeight>
+  </attribution>
+  <dateCreated>2025-12-27 16:01:53.326 UTC</dateCreated>
+</layer>

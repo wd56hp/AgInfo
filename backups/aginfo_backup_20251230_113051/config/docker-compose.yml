@@ -1,0 +1,97 @@
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: aginfo-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aginfo}
+      POSTGRES_USER: ${POSTGRES_USER:-agadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+      - ./db/temp:/tmp/aginfo-import:ro
+      - ./db/validate:/tmp/validate:ro
+    expose:
+      - "${POSTGIS_CONTAINER_PORT:-5432}"
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${POSTGIS_HOST_PORT:-15433}:${POSTGIS_CONTAINER_PORT:-5432}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agadmin -d aginfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.10
+
+  geoserver:
+    image: kartoza/geoserver:2.24.2
+    container_name: aginfo-geoserver
+    restart: unless-stopped
+    depends_on:
+      - postgis
+    environment:
+      GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER:-admin}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./geoserver/data_dir:/opt/geoserver/data_dir
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${GEOSERVER_HOST_PORT:-8090}:${GEOSERVER_CONTAINER_PORT:-8080}"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.20
+
+  web:
+    image: nginx:alpine
+    container_name: aginfo-web
+    restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${WEB_HOST_PORT:-8091}:${WEB_CONTAINER_PORT:-80}"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.30
+
+  django:
+    build:
+      context: ./django
+      dockerfile: Dockerfile.django
+    container_name: aginfo-django
+    restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-aginfo}
+      - POSTGRES_USER=${POSTGRES_USER:-agadmin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_HOST=172.28.0.10
+      - POSTGRES_PORT=5432
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-True}
+      - GDAL_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgdal.so
+      - GEOS_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgeos_c.so
+    volumes:
+      - ./django:/app
+    ports:
+      - "${SERVER_HOST_IP:-0.0.0.0}:${DJANGO_HOST_PORT:-8000}:${DJANGO_CONTAINER_PORT:-8000}"
+    networks:
+      aginfo-net:
+        ipv4_address: 172.28.0.40
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput --clear || true &&
+             python manage.py runserver 0.0.0.0:8000"
+
+networks:
+  aginfo-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

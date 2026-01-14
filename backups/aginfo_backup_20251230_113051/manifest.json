@@ -1,0 +1,19 @@
+{
+  "timestamp": "20251230_113051",
+  "date": "2025-12-30 11:30:53",
+  "backup_path": "backups/aginfo_backup_20251230_113051",
+  "log_file": "/mnt/user/appdata/AgInfo/backup/logs/backup_20251230_113051.log",
+  "database": {
+    "name": "aginfo",
+    "user": "agadmin",
+    "host": "15433",
+    "backup_file": "database/aginfo_backup.dump"
+  },
+  "components": {
+    "database": true,
+    "geoserver": true,
+    "web": true,
+    "django": true,
+    "config": true
+  }
+}

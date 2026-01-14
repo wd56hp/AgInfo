@@ -60,7 +60,7 @@ services:
 
   django:
     build:
-      context: .
+      context: ./django
       dockerfile: Dockerfile.django
     container_name: aginfo-django
     restart: unless-stopped
@@ -75,10 +75,13 @@ services:
       - POSTGRES_PORT=5432
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
       - DJANGO_DEBUG=${DJANGO_DEBUG:-True}
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-}
       - GDAL_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgdal.so
       - GEOS_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgeos_c.so
     volumes:
-      - .:/app
+      - ./django:/app
     ports:
       - "${SERVER_HOST_IP:-0.0.0.0}:${DJANGO_HOST_PORT:-8000}:${DJANGO_CONTAINER_PORT:-8000}"
     networks:
@@ -87,6 +90,7 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput --clear || true &&
+             python manage.py create_superuser_from_env &&
              python manage.py runserver 0.0.0.0:8000"
 
 networks:
