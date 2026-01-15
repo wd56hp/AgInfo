@@ -109,6 +109,38 @@
     .facility-popup a:hover {
       color: #0052a3 !important;
     }
+    .pan-control {
+      background: white;
+      border-radius: 4px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+      padding: 2px;
+    }
+    .pan-control .pan-button {
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      display: block;
+      background: white;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 16px;
+      color: #333;
+      margin: 1px;
+      padding: 0;
+      user-select: none;
+    }
+    .pan-control .pan-button:hover {
+      background: #f4f4f4;
+    }
+    .pan-control .pan-button:active {
+      background: #e0e0e0;
+    }
+    .pan-control > div {
+      display: flex;
+      justify-content: center;
+    }
   </style>
 </head>
 <body>
@@ -255,6 +287,79 @@
         }).addTo(map);
         console.log('OSM layer added');
 
+        // Add zoom controls (+ and -)
+        L.control.zoom({
+          position: 'topright'
+        }).addTo(map);
+
+        // Add directional pan controls
+        const panControl = L.control({
+          position: 'topright'
+        });
+        
+        panControl.onAdd = function(map) {
+          const div = L.DomUtil.create('div', 'leaflet-control leaflet-bar pan-control');
+          div.innerHTML = `
+            <button class="pan-button" title="Pan North" data-direction="north">▲</button>
+            <div style="display: flex;">
+              <button class="pan-button" title="Pan West" data-direction="west">◄</button>
+              <button class="pan-button" title="Pan East" data-direction="east">►</button>
+            </div>
+            <button class="pan-button" title="Pan South" data-direction="south">▼</button>
+          `;
+          
+          // Prevent map drag when clicking buttons
+          L.DomEvent.disableClickPropagation(div);
+          L.DomEvent.disableScrollPropagation(div);
+          
+          // Add click handlers
+          const buttons = div.querySelectorAll('.pan-button');
+          buttons.forEach(button => {
+            L.DomEvent.on(button, 'click', function(e) {
+              L.DomEvent.stopPropagation(e);
+              const direction = button.getAttribute('data-direction');
+              const panDistance = 200; // pixels to pan
+              
+              const currentCenter = map.getCenter();
+              const currentZoom = map.getZoom();
+              const mapSize = map.getSize();
+              const panRatio = panDistance / Math.min(mapSize.x, mapSize.y);
+              
+              let newLat = currentCenter.lat;
+              let newLng = currentCenter.lng;
+              
+              // Calculate pan distance in degrees (approximate)
+              const bounds = map.getBounds();
+              const latRange = bounds.getNorth() - bounds.getSouth();
+              const lngRange = bounds.getEast() - bounds.getWest();
+              
+              switch(direction) {
+                case 'north':
+                  newLat = currentCenter.lat + (latRange * panRatio);
+                  break;
+                case 'south':
+                  newLat = currentCenter.lat - (latRange * panRatio);
+                  break;
+                case 'east':
+                  newLng = currentCenter.lng + (lngRange * panRatio);
+                  break;
+                case 'west':
+                  newLng = currentCenter.lng - (lngRange * panRatio);
+                  break;
+              }
+              
+              map.panTo([newLat, newLng], {
+                animate: true,
+                duration: 0.3
+              });
+            });
+          });
+          
+          return div;
+        };
+        
+        panControl.addTo(map);
+
         // Invalidate size to ensure proper rendering
         setTimeout(function() {
           if (map) {
@@ -375,17 +480,12 @@
         const props = feature.properties;
         const coords = feature.geometry.coordinates; // [lon, lat]
 
-        // Get company name
+        // Get company name from facility_with_names view
+        const companyName = props.company_name || 'Unknown Company';
         const companyId = props.company_id;
-        const companyName = lookups.companies[companyId] || 
-                           lookups.companies[String(companyId)] || 
-                           `Company ${companyId}`;
 
-        // Get facility type
-        const typeId = props.facility_type_id;
-        const facilityType = lookups.facilityTypes[typeId] || 
-                            lookups.facilityTypes[String(typeId)] || 
-                            `Type ${typeId}`;
+        // Get facility type from facility_with_names view
+        const facilityType = props.facility_type_name || 'Unknown Type';
 
         // Initialize company if needed
         if (!companyData[companyName]) {

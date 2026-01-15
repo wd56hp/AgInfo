@@ -308,22 +308,12 @@
                     
                     const props = feature.properties;
                     
-                    // Get facility type name directly from GeoServer (from SQL view)
-                    // Try facility_type_name first (from view), then fallback to lookup
-                    const facilityType = props.facility_type_name || 
-                                       (props.facility_type_id ? 
-                                        (facilityTypeLookups[props.facility_type_id] || 
-                                         facilityTypeLookups[String(props.facility_type_id)] ||
-                                         `Type ${props.facility_type_id}`) : null);
+                    // Get facility type from facility_with_names view
+                    const facilityType = props.facility_type_name || null;
                     
                     // Get company name directly from GeoServer (from SQL view)
-                    // Try company_name first (from view), then fallback to lookup
-                    const companyName = props.company_name || 
-                                      (props.company_id ? 
-                                       (companyLookups[props.company_id] || 
-                                        companyLookups[String(props.company_id)] ||
-                                        companyLookups[parseInt(props.company_id)] ||
-                                        `Company ${props.company_id}`) : null);
+                    // Get company name from facility_with_names view
+                    const companyName = props.company_name || null;
                     
                     // Debug: log first feature to see available properties
                     if (facilityMarkers.length === 0 && geojson.features.length > 0) {

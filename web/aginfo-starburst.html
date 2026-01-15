@@ -509,49 +509,11 @@
       geojson.features.forEach(feature => {
         const props = feature.properties;
         
-        // Get company name (try different possible field names)
-        // Check for company_id first, then company name fields
-        let companyName = props.company_name || 
-                         props.company || 
-                         props.companyName ||
-                         props.company_name_text ||
-                         null;
+        // Get company name from facility_with_names view
+        const companyName = props.company_name || 'Unknown Company';
         
-        // If we have company_id but no name, try lookup (try both number and string key)
-        if (!companyName && props.company_id) {
-          const companyId = props.company_id;
-          companyName = lookups.companies[companyId] || 
-                       lookups.companies[String(companyId)] || 
-                       lookups.companies[parseInt(companyId)] ||
-                       `Company ${companyId}`;
-        }
-        
-        // Fallback to unknown if still no company info
-        if (!companyName) {
-          companyName = 'Unknown Company';
-        }
-        
-        // Get facility type
-        let facilityType = props.facility_type_name || 
-                            props.facility_type || 
-                            props.facilitytype_name ||
-                            props.type_name ||
-                            props.facility_type_name_text ||
-                            null;
-        
-        // If we have facility_type_id but no name, try lookup (try both number and string key)
-        if (!facilityType && props.facility_type_id) {
-          const typeId = props.facility_type_id;
-          facilityType = lookups.facilityTypes[typeId] || 
-                        lookups.facilityTypes[String(typeId)] || 
-                        lookups.facilityTypes[parseInt(typeId)] ||
-                        `Type ${typeId}`;
-        }
-        
-        // Fallback to unknown if still no type info
-        if (!facilityType) {
-          facilityType = 'Unknown Type';
-        }
+        // Get facility type from facility_with_names view
+        const facilityType = props.facility_type_name || 'Unknown Type';
         
         // Initialize company if not exists
         if (!companies[companyName]) {
@@ -590,25 +552,8 @@
       geojson.features.forEach(feature => {
         const props = feature.properties;
         
-        let facilityType = props.facility_type_name || 
-                            props.facility_type || 
-                            props.facilitytype_name ||
-                            props.type_name ||
-                            null;
-        
-        // If we have facility_type_id but no name, try lookup (try both number and string key)
-        if (!facilityType && props.facility_type_id) {
-          const typeId = props.facility_type_id;
-          facilityType = lookups.facilityTypes[typeId] || 
-                        lookups.facilityTypes[String(typeId)] || 
-                        lookups.facilityTypes[parseInt(typeId)] ||
-                        `Type ${typeId}`;
-        }
-        
-        // Fallback to unknown if still no type info
-        if (!facilityType) {
-          facilityType = 'Unknown Type';
-        }
+        // Get facility type from facility_with_names view
+        const facilityType = props.facility_type_name || 'Unknown Type';
         
         if (!types[facilityType]) {
           types[facilityType] = [];

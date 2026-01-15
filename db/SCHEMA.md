@@ -88,6 +88,8 @@ Main table storing facility/location information with geospatial data.
 | `phone_main` | VARCHAR(50) | | Main phone number |
 | `email_main` | VARCHAR(200) | | Main email address |
 | `notes` | TEXT | | Additional notes |
+| `geom_from_address` | BOOLEAN | DEFAULT FALSE | Flag indicating if coordinates were geocoded from address |
+| `marked` | BOOLEAN | DEFAULT FALSE | Flag for marking facilities for special processing |
 
 **Note:** The `geom` column is automatically populated from `latitude` and `longitude` via trigger `trg_facility_set_geom`.
 

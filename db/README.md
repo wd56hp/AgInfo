@@ -77,10 +77,13 @@ The main table storing facility/location information with geospatial data.
 | `phone_main` | VARCHAR(50) | Main phone |
 | `email_main` | VARCHAR(200) | Main email |
 | `notes` | TEXT | Additional notes |
+| `geom_from_address` | BOOLEAN DEFAULT FALSE | Flag indicating if coordinates were geocoded from address |
+| `marked` | BOOLEAN DEFAULT FALSE | Flag for marking facilities for special processing |
 
 **Key Features**:
 - Automatic geometry generation: A trigger (`trg_facility_set_geom`) automatically creates the `geom` point from `latitude`/`longitude` if not provided
 - Spatial indexing: The `geom` column supports spatial queries using PostGIS functions
+- Geocoding support: The `geom_from_address` flag tracks whether coordinates were derived from address geocoding (see [tools/README.md](tools/README.md))
 
 ---
 

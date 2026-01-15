@@ -1,0 +1,5 @@
+facility_id,name,mode_used,query_used,geocoder_backend,old_lat,old_lon,new_lat,new_lon,old_geom_from_address,new_geom_from_address,display_name,status
+418,"Box 204, 113 W. Main 135 N. Main, Hillsboro,",address,"135 N. Main, Hillsboro, KS, 67063",nominatim,38.500000,-98.000000,38.3538003,-97.2047863,False,True,"135, North Main Street, Hillsboro, Marion County, Kansas, 67063, United States",UPDATED
+422,"P.O. Box 97, 209 S. Main 135 N. Main, Hillsboro,",address,"209 S. Main, Hillsboro, KS, 67063",nominatim,38.500000,-98.000000,38.3517668,-97.2047851,False,True,"209, South Main Street, Hillsboro, Marion County, Kansas, 67063, United States",UPDATED
+600,Milton,,,nominatim,37.431686,-97.771441,,,False,False,,NO_RESULT
+764,"Box 2775 1111 East 1st, Wichita,",address,"1111 East 1st,, Wichita, KS, 67214",nominatim,38.500000,-98.000000,37.6879034,-97.324834,False,True,"1111, East 1st Street North, Wichita, Sedgwick County, Kansas, 67214, United States",UPDATED
