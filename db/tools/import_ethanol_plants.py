@@ -137,41 +137,57 @@ def parse_float(value: Optional[str]) -> Optional[float]:
 def geocode_location(company_name: str, location: str) -> Optional[Tuple[float, float]]:
     """Geocode a location using Nominatim (OpenStreetMap).
     
+    Tries multiple query formats to improve success rate.
     Returns (latitude, longitude) or None if geocoding fails.
     """
     if not company_name or not location:
         return None
     
-    # Build search query: company name + location (state/province)
-    query = f"{company_name}, {location}, USA"
+    # Try multiple query formats
+    queries = [
+        f"{company_name}, {location}, USA",  # Full company name + state
+        f"{company_name} ethanol plant, {location}, USA",  # Add "ethanol plant"
+        f"ethanol plant {location}, USA",  # Just state if company name fails
+    ]
     
-    try:
-        # Use Nominatim geocoding service (free, no API key needed)
-        url = "https://nominatim.openstreetmap.org/search"
-        params = {
-            'q': query,
-            'format': 'json',
-            'limit': 1,
-            'addressdetails': 1
-        }
-        headers = {
-            'User-Agent': 'AgInfo-Import-Script/1.0'  # Required by Nominatim
-        }
-        
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        data = response.json()
-        if data and len(data) > 0:
-            result = data[0]
-            lat = float(result.get('lat', 0))
-            lon = float(result.get('lon', 0))
-            if lat != 0 and lon != 0:
-                # Rate limiting: be nice to Nominatim
-                time.sleep(1)
-                return (lat, lon)
-    except Exception as e:
-        print(f"    ⚠ Geocoding failed for {query}: {e}", flush=True)
+    # Clean company name - remove common suffixes that might confuse geocoding
+    clean_name = company_name
+    for suffix in [" LLC", " Co.", " Company", " Corp", " Corporation", " Inc"]:
+        if clean_name.endswith(suffix):
+            clean_name = clean_name[:-len(suffix)].strip()
+            queries.insert(1, f"{clean_name}, {location}, USA")  # Try without suffix
+            break
+    
+    headers = {
+        'User-Agent': 'AgInfo-Import-Script/1.0'  # Required by Nominatim
+    }
+    
+    for query in queries:
+        try:
+            # Use Nominatim geocoding service (free, no API key needed)
+            url = "https://nominatim.openstreetmap.org/search"
+            params = {
+                'q': query,
+                'format': 'json',
+                'limit': 1,
+                'addressdetails': 1
+            }
+            
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            if data and len(data) > 0:
+                result = data[0]
+                lat = float(result.get('lat', 0))
+                lon = float(result.get('lon', 0))
+                if lat != 0 and lon != 0:
+                    # Rate limiting: be nice to Nominatim
+                    time.sleep(1)
+                    return (lat, lon)
+        except Exception as e:
+            # Try next query format
+            continue
     
     return None
 
