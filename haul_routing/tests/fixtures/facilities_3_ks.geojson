@@ -1,0 +1,47 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -98.765,
+          38.36
+        ]
+      },
+      "properties": {
+        "facility_id": 101,
+        "facility_name": "Elevator A"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -98.82,
+          38.38
+        ]
+      },
+      "properties": {
+        "facility_id": 102,
+        "facility_name": "Elevator B"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -98.7,
+          38.33
+        ]
+      },
+      "properties": {
+        "facility_id": 103,
+        "facility_name": "Elevator C"
+      }
+    }
+  ]
+}

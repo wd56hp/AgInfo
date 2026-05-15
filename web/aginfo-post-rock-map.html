@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Post Rock — Locations</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 2000;
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      min-width: 260px;
+      max-width: 320px;
+    }
+    #controls h3 {
+      margin: 0 0 6px 0;
+      font-size: 17px;
+      color: #0d3d66;
+    }
+    #controls .sub {
+      margin: 0 0 12px 0;
+      font-size: 12px;
+      color: #555;
+      line-height: 1.35;
+    }
+    #controls label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    #controls .link {
+      display: block;
+      margin: 6px 0;
+      color: #0066cc;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    #controls .link:hover {
+      text-decoration: underline;
+    }
+    .leaflet-tooltip.post-rock-label {
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(13, 61, 102, 0.35);
+      border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      color: #222;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 10px;
+      max-width: 200px;
+      white-space: nowrap;
+      text-align: center;
+      line-height: 1.25;
+      transition: opacity 0.15s ease;
+    }
+    .leaflet-tooltip.post-rock-label::before {
+      border-top-color: rgba(255, 255, 255, 0.95);
+    }
+    .silo-marker-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .post-rock-silo-icon {
+      background: transparent !important;
+      border: none !important;
+    }
+    .facility-popup a {
+      color: #0066cc !important;
+    }
+    #version-display {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      z-index: 1500;
+      font-size: 11px;
+      color: #666;
+      background: rgba(255,255,255,0.85);
+      padding: 2px 6px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h3>Post Rock locations</h3>
+    <p class="sub">Company ID 1 · Grain elevator markers and city labels. Labels hide when they would overlap (zoom in to show more). Click a marker for full details.</p>
+    <a href="aginfo-network-map.html" class="link">← AgInfo Network Map</a>
+    <a href="aginfo-starburst.html" class="link">Starburst chart</a>
+    <label>
+      <input type="checkbox" id="show-lines" checked> Show connection lines (hub to sites)
+    </label>
+    <label>
+      <input type="checkbox" id="show-labels" checked> Show location labels
+    </label>
+  </div>
+  <div id="map"></div>
+  <div id="version-display"></div>
+
+  <script src="js/version.js"></script>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    crossorigin=""
+  ></script>
+
+  <script>
+    if (typeof APP_VERSION !== 'undefined') {
+      document.getElementById('version-display').textContent = 'v' + APP_VERSION;
+    }
+
+    const POST_ROCK_COMPANY_ID = 1;
+    const BRAND = '#1f77b4';
+    const BRAND_DARK = '#0d4d7a';
+    const HQ_ACCENT = '#c9a227';
+
+    const currentHost = window.location.hostname;
+    const GEOSERVER_PORT = 8090;
+    const GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
+    const WMS_LAYER_NAME = 'aginfo:facility_with_names';
+    const INITIAL_CENTER = [38.5, -98.5];
+    const INITIAL_ZOOM = 7;
+
+    const HEADQUARTERS_TYPES = [
+      'Co-op Office',
+      'General Office',
+      'Admin Office',
+      'Organic Grain Office',
+      'Agronomy Center'
+    ];
+
+    let map;
+    let facilityMarkers = [];
+    let connectionLines = [];
+    let companyData = null;
+    let declutterTimer = null;
+    let declutterRetryCount = 0;
+
+    function waitForLeaflet(callback, maxAttempts = 20) {
+      let attempts = 0;
+      const checkInterval = setInterval(function() {
+        attempts++;
+        if (typeof L !== 'undefined') {
+          clearInterval(checkInterval);
+          callback();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          alert('Error: Leaflet failed to load. Check your network and refresh.');
+        }
+      }, 200);
+    }
+
+    function isPostRockFacility(props) {
+      const id = props.company_id;
+      return parseInt(id, 10) === POST_ROCK_COMPANY_ID;
+    }
+
+    function grainElevatorIconHtml(isHQ) {
+      const body = isHQ ? HQ_ACCENT : BRAND;
+      const bodyHi = isHQ ? '#e8c84a' : '#4a90c8';
+      const stroke = isHQ ? '#8a6f1a' : BRAND_DARK;
+      const roof = isHQ ? '#a67c00' : '#2a5580';
+      const pipe = '#94a8b8';
+      return (
+        '<div class="silo-marker-wrap" aria-hidden="true">' +
+        '<svg width="34" height="42" viewBox="0 0 34 42" xmlns="http://www.w3.org/2000/svg">' +
+        '<ellipse cx="17" cy="40" rx="13" ry="2.2" fill="rgba(0,0,0,0.12)"/>' +
+        '<rect x="9" y="10" width="16" height="28" rx="2.2" fill="' +
+        body +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="1.2"/>' +
+        '<line x1="12" y1="14" x2="12" y2="34" stroke="' +
+        bodyHi +
+        '" stroke-width="1" opacity="0.45"/>' +
+        '<line x1="17" y1="14" x2="17" y2="34" stroke="' +
+        bodyHi +
+        '" stroke-width="1" opacity="0.45"/>' +
+        '<line x1="22" y1="14" x2="22" y2="34" stroke="' +
+        bodyHi +
+        '" stroke-width="1" opacity="0.45"/>' +
+        '<rect x="12" y="2" width="10" height="9" rx="1" fill="' +
+        roof +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="1"/>' +
+        '<rect x="2" y="16" width="4" height="14" rx="0.8" fill="' +
+        pipe +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="0.8"/>' +
+        '<line x1="4" y1="18" x2="9" y2="20" stroke="' +
+        stroke +
+        '" stroke-width="1.4" stroke-linecap="round"/>' +
+        (isHQ
+          ? '<circle cx="17" cy="21" r="3.2" fill="#fff" stroke="#8a6f1a" stroke-width="1"/>'
+          : '') +
+        '</svg></div>'
+      );
+    }
+
+    function cityLabelFromFacility(facility) {
+      var c = (facility.city || '').trim();
+      if (c) return c;
+      var name = facility.name || '';
+      var m = name.match(/^(.+?)\s+Grain\s+ELEVATOR$/i);
+      if (m) return m[1].trim();
+      m = name.match(/^(.+?)\s+Elevator$/i);
+      if (m) return m[1].trim();
+      return name || 'Location';
+    }
+
+    function buildLabelText(facility) {
+      return cityLabelFromFacility(facility);
+    }
+
+    function rectsOverlap(a, b) {
+      return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+    }
+
+    function scheduleDeclutter() {
+      clearTimeout(declutterTimer);
+      declutterTimer = setTimeout(function() {
+        requestAnimationFrame(function() {
+          requestAnimationFrame(declutterLabels);
+        });
+      }, 50);
+    }
+
+    function declutterLabels() {
+      if (!map || facilityMarkers.length === 0) return;
+      if (!document.getElementById('show-labels').checked) return;
+
+      var mapRect = map.getContainer().getBoundingClientRect();
+      var padding = 8;
+      var center = map.getCenter();
+      var items = [];
+
+      facilityMarkers.forEach(function(marker) {
+        var tt = marker.getTooltip();
+        if (!tt) return;
+        var el = tt.getElement();
+        if (!el) return;
+        items.push({ el: el, latlng: marker.getLatLng() });
+      });
+
+      if (items.length === 0) return;
+
+      items.sort(function(a, b) {
+        var da = a.latlng.distanceTo(center);
+        var db = b.latlng.distanceTo(center);
+        var d = db - da;
+        if (Math.abs(d) < 1e-8) {
+          return a.latlng.lng - b.latlng.lng;
+        }
+        return d;
+      });
+
+      var placed = [];
+      var needRetry = false;
+
+      items.forEach(function(item) {
+        var el = item.el;
+        var r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) {
+          el.style.opacity = '1';
+          el.style.pointerEvents = '';
+          el.removeAttribute('aria-hidden');
+          needRetry = true;
+          return;
+        }
+
+        var rect = {
+          left: r.left - mapRect.left - padding,
+          top: r.top - mapRect.top - padding,
+          right: r.right - mapRect.left + padding,
+          bottom: r.bottom - mapRect.top + padding
+        };
+
+        var hit = false;
+        for (var j = 0; j < placed.length; j++) {
+          if (rectsOverlap(rect, placed[j])) {
+            hit = true;
+            break;
+          }
+        }
+
+        if (hit) {
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+          el.setAttribute('aria-hidden', 'true');
+        } else {
+          el.style.opacity = '1';
+          el.style.pointerEvents = '';
+          el.removeAttribute('aria-hidden');
+          placed.push(rect);
+        }
+      });
+
+      if (needRetry) {
+        declutterRetryCount++;
+        if (declutterRetryCount < 10) {
+          setTimeout(scheduleDeclutter, 120);
+        } else {
+          declutterRetryCount = 0;
+        }
+      } else {
+        declutterRetryCount = 0;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      waitForLeaflet(function() {
+        setTimeout(initializeMap, 50);
+      });
+    });
+
+    function initializeMap() {
+      const mapContainer = document.getElementById('map');
+      if (!mapContainer) return;
+
+      map = L.map('map', { preferCanvas: false }).setView(INITIAL_CENTER, INITIAL_ZOOM);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      map.whenReady(function() {
+        loadFacilities();
+      });
+
+      map.on('moveend zoomend', scheduleDeclutter);
+
+      setTimeout(function() {
+        map.invalidateSize();
+        scheduleDeclutter();
+      }, 100);
+
+      window.addEventListener('resize', function() {
+        setTimeout(function() {
+          map.invalidateSize();
+          scheduleDeclutter();
+        }, 100);
+      });
+
+      document.getElementById('show-lines').addEventListener('change', updateMap);
+      document.getElementById('show-labels').addEventListener('change', updateMap);
+    }
+
+    async function loadFacilities() {
+      try {
+        const wfsUrl =
+          `${GEOSERVER_URL}/wfs?` +
+          `service=WFS&version=1.1.0&request=GetFeature&` +
+          `typeName=${WMS_LAYER_NAME}&outputFormat=application/json&srsName=EPSG:4326`;
+
+        const response = await fetch(wfsUrl);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+
+        const geojson = await response.json();
+        companyData = processPostRockFacilities(geojson);
+        if (!companyData || companyData.facilities.length === 0) {
+          alert('No Post Rock (company ID ' + POST_ROCK_COMPANY_ID + ') facilities were returned. Check GeoServer and data.');
+          return;
+        }
+        updateMap();
+      } catch (e) {
+        console.error(e);
+        alert('Error loading facilities: ' + e.message);
+      }
+    }
+
+    function processPostRockFacilities(geojson) {
+      const facilities = [];
+      let resolvedCompanyName = 'Post Rock';
+
+      if (!geojson.features || geojson.features.length === 0) {
+        return null;
+      }
+
+      geojson.features.forEach(function(feature) {
+        const props = feature.properties;
+        if (!isPostRockFacility(props)) return;
+
+        if (props.company_name) resolvedCompanyName = props.company_name;
+
+        const coords = feature.geometry.coordinates;
+        const facilityType = props.facility_type_name || 'Unknown Type';
+        const facility = {
+          id: props.facility_id || props.name,
+          name: props.name || 'Unnamed facility',
+          type: facilityType,
+          description: props.description || '',
+          city: props.city || '',
+          state: props.state || '',
+          county: props.county || '',
+          coordinates: [coords[1], coords[0]],
+          isHeadquarters: HEADQUARTERS_TYPES.includes(facilityType)
+        };
+        facilities.push(facility);
+      });
+
+      const companyName = resolvedCompanyName;
+      let headquarters = facilities.find(function(f) {
+        return f.isHeadquarters;
+      }) || null;
+
+      if (!headquarters && facilities.length > 0) {
+        let totalLat = 0;
+        let totalLon = 0;
+        facilities.forEach(function(f) {
+          totalLat += f.coordinates[0];
+          totalLon += f.coordinates[1];
+        });
+        headquarters = {
+          ...facilities[0],
+          coordinates: [
+            totalLat / facilities.length,
+            totalLon / facilities.length
+          ],
+          name: companyName + ' (hub)',
+          isHeadquarters: true
+        };
+      }
+
+      return {
+        name: companyName,
+        id: POST_ROCK_COMPANY_ID,
+        facilities: facilities,
+        headquarters: headquarters
+      };
+    }
+
+    function updateMap() {
+      declutterRetryCount = 0;
+      facilityMarkers.forEach(function(m) {
+        map.removeLayer(m);
+      });
+      connectionLines.forEach(function(l) {
+        map.removeLayer(l);
+      });
+      facilityMarkers = [];
+      connectionLines = [];
+
+      if (!companyData || !companyData.headquarters) return;
+
+      const showLines = document.getElementById('show-lines').checked;
+      const showLabels = document.getElementById('show-labels').checked;
+      const hq = companyData.headquarters;
+      const color = BRAND;
+
+      if (showLines) {
+        companyData.facilities.forEach(function(facility) {
+          if (
+            facility.id === hq.id &&
+            facility.coordinates[0] === hq.coordinates[0] &&
+            facility.coordinates[1] === hq.coordinates[1]
+          ) {
+            return;
+          }
+          const line = L.polyline([hq.coordinates, facility.coordinates], {
+            color: color,
+            weight: 2,
+            opacity: 0.55,
+            dashArray: '6, 6'
+          }).addTo(map);
+          connectionLines.push(line);
+        });
+      }
+
+      companyData.facilities.forEach(function(facility) {
+        const isHQ =
+          facility.id === hq.id &&
+          facility.coordinates[0] === hq.coordinates[0] &&
+          facility.coordinates[1] === hq.coordinates[1];
+
+        const icon = L.divIcon({
+          className: 'post-rock-silo-icon',
+          html: grainElevatorIconHtml(isHQ),
+          iconSize: [34, 42],
+          iconAnchor: [17, 40],
+          popupAnchor: [0, -36]
+        });
+
+        const popupContent =
+          '<div style="min-width:180px;">' +
+          '<strong>' +
+          escapeHtml(facility.name) +
+          '</strong><br>' +
+          escapeHtml(facility.type) +
+          '<br>' +
+          escapeHtml([facility.city, facility.state].filter(Boolean).join(', ')) +
+          '<br>' +
+          (facility.county ? '<span style="color:#555;">' + escapeHtml(facility.county) + ' County</span><br>' : '') +
+          (facility.description ? '<span style="font-size:12px;">' + escapeHtml(facility.description) + '</span><br>' : '') +
+          '<strong>' + escapeHtml(companyData.name) + '</strong>' +
+          (isHQ && facility.isHeadquarters ? '<br><strong>Hub / HQ</strong>' : '') +
+          '</div>';
+
+        const marker = L.marker(facility.coordinates, { icon: icon })
+          .bindPopup(popupContent, { className: 'facility-popup' })
+          .addTo(map);
+
+        if (showLabels) {
+          marker.bindTooltip(buildLabelText(facility), {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -42],
+            opacity: 1,
+            className: 'post-rock-label'
+          });
+        }
+
+        facilityMarkers.push(marker);
+      });
+
+      if (facilityMarkers.length > 0) {
+        const group = new L.featureGroup(facilityMarkers);
+        map.fitBounds(group.getBounds().pad(0.12));
+      }
+
+      scheduleDeclutter();
+    }
+
+    function escapeHtml(text) {
+      if (text == null) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

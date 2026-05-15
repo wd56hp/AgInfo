@@ -208,7 +208,7 @@ BEGIN
     FROM (
         SELECT 'facility_geom_gix' AS indexname
         UNION ALL SELECT 'parcels_geom_gix'
-        UNION ALL SELECT 'parcels_parcelnumb_uidx'
+        UNION ALL SELECT 'parcels_geoid_parcelnumb_uidx'
     ) expected
     WHERE NOT EXISTS (
         SELECT 1 FROM pg_indexes 

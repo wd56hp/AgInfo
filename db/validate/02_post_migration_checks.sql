@@ -214,15 +214,15 @@ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'parcels') THEN
         SELECT COUNT(*) INTO duplicate_parcels
         FROM (
-            SELECT parcelnumb, COUNT(*) as cnt
+            SELECT geoid, parcelnumb, COUNT(*) as cnt
             FROM parcels
             WHERE parcelnumb IS NOT NULL
-            GROUP BY parcelnumb
+            GROUP BY geoid, parcelnumb
             HAVING COUNT(*) > 1
         ) duplicates;
         
         IF duplicate_parcels > 0 THEN
-            RAISE EXCEPTION 'POST-MIGRATION CHECK FAILED: Found duplicate parcel numbers';
+            RAISE EXCEPTION 'POST-MIGRATION CHECK FAILED: Found duplicate parcel numbers within the same geoid';
         END IF;
     END IF;
     
@@ -327,7 +327,7 @@ BEGIN
     -- Add parcel indexes if parcels table exists
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'parcels') THEN
         index_list := array_append(index_list, 'parcels_geom_gix');
-        index_list := array_append(index_list, 'parcels_parcelnumb_uidx');
+        index_list := array_append(index_list, 'parcels_geoid_parcelnumb_uidx');
     END IF;
     
     missing_indexes := ARRAY[]::TEXT[];

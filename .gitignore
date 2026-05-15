@@ -1,5 +1,13 @@
 # --- AgInfo custom ignores ---
 
+# downloadable / regenerable caches (do not commit; e.g. geocoding & OSM-related JSON)
+cache/
+
+# Haul routing smoke test outputs
+haul_routing/tests/out_smoke/
+haul_routing/runs/
+haul_routing/osmnx_cache/
+
 # Docker volumes
 db/data/
 geoserver/data_dir/

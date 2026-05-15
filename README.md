@@ -23,9 +23,11 @@ AgInfo is a comprehensive agricultural facility and services information system 
    ```
 
 2. **Access web maps**: `http://your-server:8091`
+   - **GeoServer Map Manager**: `/` (root page)
    - Standard Map: `/aginfo-map.html`
    - Network Map: `/aginfo-network-map.html`
    - Starburst Chart: `/aginfo-starburst.html`
+   - Home/Dashboard: `/home.html`
 
 3. **Access GeoServer**: `http://your-server:8090/geoserver`
 
@@ -47,6 +49,14 @@ Utility scripts for managing and fixing database data are available in the `db/t
   - Supports Nominatim (OpenStreetMap) and Google Geocoding API
   - Handles full addresses and city/state-only addresses (geocodes to center of town)
   - See [db/tools/README.md](db/tools/README.md) for full documentation
+
+## Haul routing (OSM drive distance / time)
+
+Field-to-facility **road** routing (not straight-line haul metrics) using OpenStreetMap:
+
+- Python package: [`haul_routing/`](haul_routing/)
+- CLI: [`scripts/build_haul_matrix.py`](scripts/build_haul_matrix.py)
+- Installation, required columns, outputs (CSV, GeoPackage, PostGIS, QGIS views), Docker **smoke test (10 fields)**: [**haul_routing/README.md**](haul_routing/README.md)
 
 ## Documentation
 

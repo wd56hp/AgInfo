@@ -1,0 +1,27 @@
+# Road speed assumptions (mph) for haul routing over OSM drive network.
+# Keys should match OSM `highway` tag values where possible.
+# Special keys: dirt_road, gravel_road, unknown_road (fallback when highway is missing or unrecognized).
+
+motorway: 65
+motorway_link: 55
+trunk: 60
+trunk_link: 50
+primary: 55
+primary_link: 45
+secondary: 50
+secondary_link: 40
+tertiary: 45
+tertiary_link: 35
+residential: 30
+living_street: 25
+unclassified: 35
+service: 20
+track: 25
+road: 40  # generic paved minor road
+dirt_road: 40
+gravel_road: 40
+unknown_road: 40
+
+# Routing / unloading (used by pipeline; can override in Python API)
+defaults:
+  unload_minutes: 30

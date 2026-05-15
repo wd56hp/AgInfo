@@ -168,7 +168,7 @@ CREATE INDEX IF NOT EXISTS parcels_county_state_ix ON parcels USING btree (state
 CREATE INDEX IF NOT EXISTS parcels_geoid_ix ON parcels USING btree (geoid);
 CREATE INDEX IF NOT EXISTS parcels_geom_gix ON parcels USING gist (geom);
 CREATE INDEX IF NOT EXISTS parcels_parcelnumb_ix ON parcels USING btree (parcelnumb);
-CREATE UNIQUE INDEX IF NOT EXISTS parcels_parcelnumb_uidx ON parcels USING btree (parcelnumb);
+CREATE UNIQUE INDEX IF NOT EXISTS parcels_geoid_parcelnumb_uidx ON parcels USING btree (geoid, parcelnumb);
 
 -- Grant permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON parcels TO agadmin;

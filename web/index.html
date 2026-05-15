@@ -3,59 +3,281 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AgInfo - Facility Maps</title>
+    <title>GeoServer Map Manager - AgInfo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body {
-            font-family: Arial, sans-serif;
+        * {
             margin: 0;
-            padding: 40px;
-            background-color: #f5f5f5;
+            padding: 0;
+            box-sizing: border-box;
         }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
         .container {
-            max-width: 800px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
-            padding: 40px;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
         }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
+
+        .header {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            color: white;
+            padding: 30px;
         }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-        }
-        .map-links {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-top: 30px;
-        }
-        .map-card {
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            padding: 20px;
-            text-decoration: none;
-            color: #333;
-            display: block;
-            transition: all 0.3s;
-        }
-        .map-card:hover {
-            border-color: #0066cc;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            transform: translateY(-2px);
-        }
-        .map-card h2 {
+
+        .header h1 {
             margin: 0 0 10px 0;
-            color: #0066cc;
+            font-size: 28px;
         }
-        .map-card p {
+
+        .header p {
             margin: 0;
-            color: #666;
+            opacity: 0.9;
             font-size: 14px;
         }
+
+        .content {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 0;
+            height: calc(100vh - 200px);
+            min-height: 600px;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .main-panel {
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #0066cc;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0052a3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .layer-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .layer-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .layer-item:hover {
+            border-color: #0066cc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .layer-info {
+            flex: 1;
+        }
+
+        .layer-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .layer-workspace {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .map-layers {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .map-layer-card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+        }
+
+        .map-layer-card h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+
+        .map-layer-card .layer-list {
+            margin-top: 10px;
+        }
+
+        .map-layer-card .layer-item {
+            margin-bottom: 8px;
+            padding: 8px;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .config-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .config-section label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+
         #version-display {
             position: fixed;
             bottom: 10px;
@@ -65,7 +287,6 @@
             border-radius: 3px;
             font-size: 11px;
             color: #666;
-            font-family: Arial, sans-serif;
             z-index: 1500;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
@@ -73,36 +294,447 @@
 </head>
 <body>
     <div class="container">
-        <h1>AgInfo Facility Maps</h1>
-        <p class="subtitle">Choose a visualization to explore agricultural facilities and companies</p>
-        
-        <div class="map-links">
-            <a href="aginfo-map.html" class="map-card">
-                <h2>📍 Standard Map</h2>
-                <p>Interactive map showing all facilities with filtering by facility type</p>
-            </a>
-            
-            <a href="aginfo-network-map.html" class="map-card">
-                <h2>🔗 Network Map</h2>
-                <p>Hub-and-spoke visualization connecting headquarters to satellite facilities</p>
-            </a>
-            
-            <a href="aginfo-starburst.html" class="map-card">
-                <h2>📊 Starburst Chart</h2>
-                <p>Hierarchical radial chart showing facilities grouped by company and type</p>
-            </a>
+        <div class="header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>🗺️ GeoServer Map Manager</h1>
+                    <p>Create and manage maps with layers from GeoServer</p>
+                </div>
+                <div>
+                    <a href="home.html" style="color: white; text-decoration: none; padding: 8px 16px; background: rgba(255,255,255,0.2); border-radius: 4px; font-size: 14px; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                        🏠 Home
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="sidebar">
+                <div class="section">
+                    <div class="section-title">Configuration</div>
+                    <div class="config-section">
+                        <label>GeoServer URL:</label>
+                        <input type="text" id="geoserver-url" value="" placeholder="Auto-detected">
+                        <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">
+                            Leave empty to auto-detect from current host
+                        </small>
+                    </div>
+                    <div class="config-section">
+                        <label>Username:</label>
+                        <input type="text" id="geoserver-user" value="admin">
+                    </div>
+                    <div class="config-section">
+                        <label>Password:</label>
+                        <input type="password" id="geoserver-password" value="changeme">
+                    </div>
+                    <div class="config-section">
+                        <label>Workspace:</label>
+                        <input type="text" id="workspace" value="aginfo">
+                    </div>
+                    <button class="btn btn-primary" onclick="loadLayers()" style="width: 100%;">
+                        🔄 Refresh Layers
+                    </button>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Create New Map</div>
+                    <form id="create-map-form" onsubmit="createMap(event)">
+                        <div class="form-group">
+                            <label>Map Name:</label>
+                            <input type="text" id="map-name" required placeholder="e.g., my_custom_map">
+                        </div>
+                        <div class="form-group">
+                            <label>Title:</label>
+                            <input type="text" id="map-title" required placeholder="My Custom Map">
+                        </div>
+                        <div class="form-group">
+                            <label>Abstract (optional):</label>
+                            <textarea id="map-abstract" placeholder="Description of the map"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-success" style="width: 100%;">
+                            ➕ Create Map
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="main-panel">
+                <div class="section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <div class="section-title">Available Layers</div>
+                        <div id="layer-count" style="color: #666; font-size: 14px;"></div>
+                    </div>
+                    <div id="layers-container">
+                        <div class="loading">Loading layers...</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <div class="section-title">Existing Maps</div>
+                        <button class="btn btn-secondary btn-sm" onclick="loadMaps()">🔄 Refresh</button>
+                    </div>
+                    <div id="maps-container">
+                        <div class="loading">Loading maps...</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
     <div id="version-display"></div>
-    
-    <!-- Version info -->
+
     <script src="js/version.js"></script>
     <script>
-        // Display version
-        if (typeof APP_VERSION !== 'undefined') {
-            document.getElementById('version-display').textContent = 'v' + APP_VERSION;
+        // Auto-detect GeoServer URL
+        const currentHost = window.location.hostname;
+        const GEOSERVER_PORT = 8090;
+        let GEOSERVER_URL = `http://${currentHost}:${GEOSERVER_PORT}/geoserver`;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('geoserver-url').value = GEOSERVER_URL;
+            loadLayers();
+            loadMaps();
+            
+            // Display version
+            if (typeof APP_VERSION !== 'undefined') {
+                document.getElementById('version-display').textContent = 'v' + APP_VERSION;
+            }
+        });
+
+        function getGeoServerUrl() {
+            const url = document.getElementById('geoserver-url').value.trim();
+            return url || GEOSERVER_URL;
+        }
+
+        function getAuth() {
+            const username = document.getElementById('geoserver-user').value;
+            const password = document.getElementById('geoserver-password').value;
+            return btoa(`${username}:${password}`);
+        }
+
+        function getWorkspace() {
+            return document.getElementById('workspace').value.trim() || 'aginfo';
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const url = `${getGeoServerUrl()}/rest/${endpoint}`;
+            const headers = {
+                'Authorization': `Basic ${getAuth()}`,
+                'Content-Type': 'application/json'
+            };
+
+            const options = {
+                method: method,
+                headers: headers
+            };
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(url, options);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                // Handle empty responses
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const text = await response.text();
+                    return text ? JSON.parse(text) : null;
+                }
+                return null;
+            } catch (error) {
+                console.error('API call error:', error);
+                throw error;
+            }
+        }
+
+        async function loadLayers() {
+            const container = document.getElementById('layers-container');
+            container.innerHTML = '<div class="loading">Loading layers...</div>';
+
+            try {
+                const workspace = getWorkspace();
+                const layers = await apiCall(`workspaces/${workspace}/layers.json`);
+
+                if (!layers || !layers.layers || layers.layers.layer.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No layers found in this workspace</div>';
+                    document.getElementById('layer-count').textContent = '0 layers';
+                    return;
+                }
+
+                const layerList = layers.layers.layer;
+                document.getElementById('layer-count').textContent = `${layerList.length} layer(s)`;
+
+                let html = '<ul class="layer-list">';
+                for (const layer of layerList) {
+                    const layerName = layer.name || layer;
+                    html += `
+                        <li class="layer-item">
+                            <div class="layer-info">
+                                <div class="layer-name">${escapeHtml(layerName)}</div>
+                                <div class="layer-workspace">${escapeHtml(workspace)}</div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="addLayerToMap('${escapeHtml(layerName)}')">
+                                ➕ Add to Map
+                            </button>
+                        </li>
+                    `;
+                }
+                html += '</ul>';
+                container.innerHTML = html;
+            } catch (error) {
+                container.innerHTML = `<div class="alert alert-error">Error loading layers: ${error.message}</div>`;
+                console.error('Error loading layers:', error);
+            }
+        }
+
+        async function loadMaps() {
+            const container = document.getElementById('maps-container');
+            container.innerHTML = '<div class="loading">Loading maps...</div>';
+
+            try {
+                // Note: GeoServer doesn't have a native "maps" concept in REST API
+                // We'll show layer groups which can function as maps
+                const workspace = getWorkspace();
+                const layerGroups = await apiCall(`workspaces/${workspace}/layergroups.json`);
+
+                if (!layerGroups || !layerGroups.layerGroups || !layerGroups.layerGroups.layerGroup) {
+                    container.innerHTML = '<div class="empty-state">No layer groups (maps) found. Create one using the form.</div>';
+                    return;
+                }
+
+                const groups = Array.isArray(layerGroups.layerGroups.layerGroup) 
+                    ? layerGroups.layerGroups.layerGroup 
+                    : [layerGroups.layerGroups.layerGroup];
+
+                if (groups.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No layer groups (maps) found. Create one using the form.</div>';
+                    return;
+                }
+
+                let html = '<div class="map-layers">';
+                for (const group of groups) {
+                    const groupName = group.name;
+                    const layers = group.layers && group.layers.layer 
+                        ? (Array.isArray(group.layers.layer) ? group.layers.layer : [group.layers.layer])
+                        : [];
+
+                    html += `
+                        <div class="map-layer-card">
+                            <h4>${escapeHtml(groupName)}</h4>
+                            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                ${layers.length} layer(s)
+                            </p>
+                            <ul class="layer-list">
+                                ${layers.map(layer => {
+                                    const layerName = layer.name || layer;
+                                    return `<li class="layer-item">
+                                        <div class="layer-info">
+                                            <div class="layer-name">${escapeHtml(layerName)}</div>
+                                        </div>
+                                        <button class="btn btn-danger btn-sm" onclick="removeLayerFromGroup('${escapeHtml(groupName)}', '${escapeHtml(layerName)}')">
+                                            🗑️ Remove
+                                        </button>
+                                    </li>`;
+                                }).join('')}
+                            </ul>
+                            <button class="btn btn-danger btn-sm" onclick="deleteLayerGroup('${escapeHtml(groupName)}')" style="margin-top: 10px; width: 100%;">
+                                🗑️ Delete Map
+                            </button>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch (error) {
+                container.innerHTML = `<div class="alert alert-error">Error loading maps: ${error.message}</div>`;
+                console.error('Error loading maps:', error);
+            }
+        }
+
+        async function createMap(event) {
+            event.preventDefault();
+            
+            const mapName = document.getElementById('map-name').value.trim();
+            const mapTitle = document.getElementById('map-title').value.trim();
+            const mapAbstract = document.getElementById('map-abstract').value.trim();
+            const workspace = getWorkspace();
+
+            if (!mapName || !mapTitle) {
+                alert('Please fill in map name and title');
+                return;
+            }
+
+            try {
+                // Create a layer group (which functions as a map in GeoServer)
+                const layerGroup = {
+                    layerGroup: {
+                        name: mapName,
+                        title: mapTitle,
+                        abstractTxt: mapAbstract || mapTitle,
+                        mode: 'SINGLE',
+                        layers: {
+                            layer: []
+                        },
+                        styles: {
+                            style: []
+                        },
+                        bounds: {
+                            minx: -180,
+                            miny: -90,
+                            maxx: 180,
+                            maxy: 90
+                        }
+                    }
+                };
+
+                await apiCall(`workspaces/${workspace}/layergroups`, 'POST', layerGroup);
+                
+                document.getElementById('create-map-form').reset();
+                showAlert('Map created successfully!', 'success');
+                loadMaps();
+            } catch (error) {
+                showAlert(`Error creating map: ${error.message}`, 'error');
+                console.error('Error creating map:', error);
+            }
+        }
+
+        async function addLayerToMap(layerName) {
+            const mapName = prompt('Enter the map (layer group) name to add this layer to:');
+            if (!mapName) return;
+
+            const workspace = getWorkspace();
+
+            try {
+                // Get existing layer group
+                const existingGroup = await apiCall(`workspaces/${workspace}/layergroups/${mapName}.json`);
+                
+                if (!existingGroup || !existingGroup.layerGroup) {
+                    showAlert(`Map "${mapName}" not found`, 'error');
+                    return;
+                }
+
+                const layerGroup = existingGroup.layerGroup;
+                
+                // Ensure layers array exists
+                if (!layerGroup.layers) {
+                    layerGroup.layers = { layer: [] };
+                }
+                if (!layerGroup.layers.layer) {
+                    layerGroup.layers.layer = [];
+                }
+                if (!Array.isArray(layerGroup.layers.layer)) {
+                    layerGroup.layers.layer = [layerGroup.layers.layer];
+                }
+
+                // Check if layer already exists
+                const layerExists = layerGroup.layers.layer.some(l => {
+                    const existingName = typeof l === 'string' ? l : l.name;
+                    return existingName === layerName;
+                });
+
+                if (layerExists) {
+                    showAlert(`Layer "${layerName}" is already in this map`, 'info');
+                    return;
+                }
+
+                // Add layer
+                layerGroup.layers.layer.push({
+                    name: layerName,
+                    href: `${getGeoServerUrl()}/rest/layers/${workspace}:${layerName}.json`
+                });
+
+                // Update layer group
+                await apiCall(`workspaces/${workspace}/layergroups/${mapName}`, 'PUT', { layerGroup });
+
+                showAlert(`Layer "${layerName}" added to map "${mapName}"`, 'success');
+                loadMaps();
+            } catch (error) {
+                showAlert(`Error adding layer: ${error.message}`, 'error');
+                console.error('Error adding layer:', error);
+            }
+        }
+
+        async function removeLayerFromGroup(groupName, layerName) {
+            if (!confirm(`Remove layer "${layerName}" from map "${groupName}"?`)) {
+                return;
+            }
+
+            const workspace = getWorkspace();
+
+            try {
+                const existingGroup = await apiCall(`workspaces/${workspace}/layergroups/${groupName}.json`);
+                
+                if (!existingGroup || !existingGroup.layerGroup) {
+                    showAlert(`Map "${groupName}" not found`, 'error');
+                    return;
+                }
+
+                const layerGroup = existingGroup.layerGroup;
+                
+                if (layerGroup.layers && layerGroup.layers.layer) {
+                    const layers = Array.isArray(layerGroup.layers.layer) 
+                        ? layerGroup.layers.layer 
+                        : [layerGroup.layers.layer];
+                    
+                    layerGroup.layers.layer = layers.filter(l => {
+                        const existingName = typeof l === 'string' ? l : l.name;
+                        return existingName !== layerName;
+                    });
+                }
+
+                await apiCall(`workspaces/${workspace}/layergroups/${groupName}`, 'PUT', { layerGroup });
+
+                showAlert(`Layer removed from map`, 'success');
+                loadMaps();
+            } catch (error) {
+                showAlert(`Error removing layer: ${error.message}`, 'error');
+                console.error('Error removing layer:', error);
+            }
+        }
+
+        async function deleteLayerGroup(groupName) {
+            if (!confirm(`Delete map "${groupName}"? This cannot be undone.`)) {
+                return;
+            }
+
+            const workspace = getWorkspace();
+
+            try {
+                await apiCall(`workspaces/${workspace}/layergroups/${groupName}`, 'DELETE');
+                showAlert(`Map "${groupName}" deleted`, 'success');
+                loadMaps();
+            } catch (error) {
+                showAlert(`Error deleting map: ${error.message}`, 'error');
+                console.error('Error deleting map:', error);
+            }
+        }
+
+        function showAlert(message, type = 'info') {
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            const mainPanel = document.querySelector('.main-panel');
+            mainPanel.insertBefore(alert, mainPanel.firstChild);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
     </script>
 </body>
 </html>
-

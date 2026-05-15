@@ -152,6 +152,42 @@ CREATE TABLE IF NOT EXISTS facility_transport_mode (
     PRIMARY KEY (facility_id, transport_mode_id)
 );
 
+-- 11. scrape_url ------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS scrape_url (
+    scrape_url_id      SERIAL PRIMARY KEY,
+    
+    -- Link to company or facility (at least one should be set)
+    company_id         INT REFERENCES company(company_id),
+    facility_id        INT REFERENCES facility(facility_id),
+    
+    -- URL information
+    master_website     VARCHAR(500) NOT NULL,  -- Base website URL (e.g., https://example.com)
+    bid_page_path      VARCHAR(500),           -- Specific page/endpoint with bid information (e.g., /prices/grain.html)
+    
+    -- Metadata
+    status             VARCHAR(20) DEFAULT 'ACTIVE',  -- ACTIVE / INACTIVE / ERROR
+    last_scraped       TIMESTAMP,                     -- When this URL was last successfully scraped
+    last_error         TEXT,                           -- Last error message if scraping failed
+    scrape_frequency   VARCHAR(20),                   -- How often to scrape (e.g., 'DAILY', 'WEEKLY', 'MONTHLY')
+    notes              TEXT,
+    
+    -- Timestamps
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Ensure at least one of company_id or facility_id is set
+    CONSTRAINT check_company_or_facility CHECK (
+        company_id IS NOT NULL OR facility_id IS NOT NULL
+    )
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_scrape_url_company ON scrape_url(company_id);
+CREATE INDEX IF NOT EXISTS idx_scrape_url_facility ON scrape_url(facility_id);
+CREATE INDEX IF NOT EXISTS idx_scrape_url_status ON scrape_url(status);
+CREATE INDEX IF NOT EXISTS idx_scrape_url_last_scraped ON scrape_url(last_scraped);
+
 -- Optional: basic lookup seeds ----------------------------------------
 
 INSERT INTO transport_mode (name)

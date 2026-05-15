@@ -179,6 +179,34 @@ Junction table linking facilities to transportation modes they support.
 | `notes` | TEXT | | Additional notes |
 | **PRIMARY KEY** | (facility_id, transport_mode_id) | | Composite primary key |
 
+### Table: `scrape_url`
+
+Stores URLs for web scraping, linked to companies and/or facilities.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `scrape_url_id` | SERIAL | PRIMARY KEY | Unique URL identifier |
+| `company_id` | INT | FOREIGN KEY → company(company_id) | Associated company (optional) |
+| `facility_id` | INT | FOREIGN KEY → facility(facility_id) | Associated facility (optional) |
+| `master_website` | VARCHAR(500) | NOT NULL | Base website URL (e.g., https://example.com) |
+| `page_path` | VARCHAR(500) | | Specific page/endpoint to scrape (e.g., /prices/grain.html) |
+| `status` | VARCHAR(20) | DEFAULT 'ACTIVE' | Status: ACTIVE, INACTIVE, ERROR |
+| `last_scraped` | TIMESTAMP | | When this URL was last successfully scraped |
+| `last_error` | TEXT | | Last error message if scraping failed |
+| `scrape_frequency` | VARCHAR(20) | | How often to scrape: 'DAILY', 'WEEKLY', 'MONTHLY', etc. |
+| `notes` | TEXT | | Additional notes |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Update timestamp |
+
+**Constraints:**
+- At least one of `company_id` or `facility_id` must be set (CHECK constraint)
+
+**Indexes:**
+- `idx_scrape_url_company` (btree on `company_id`)
+- `idx_scrape_url_facility` (btree on `facility_id`)
+- `idx_scrape_url_status` (btree on `status`)
+- `idx_scrape_url_last_scraped` (btree on `last_scraped`)
+
 ---
 
 ## Parcels Schema
@@ -256,7 +284,7 @@ Main table for property parcel data with geospatial information.
 - `parcels_geoid_ix` (btree on `geoid`)
 - `parcels_geom_gix` (gist on `geom`)
 - `parcels_parcelnumb_ix` (btree on `parcelnumb`)
-- `parcels_parcelnumb_uidx` (unique btree on `parcelnumb`)
+- `parcels_geoid_parcelnumb_uidx` (unique btree on `geoid`, `parcelnumb`)
 
 ### Table: `parcels_rush_stg`
 
