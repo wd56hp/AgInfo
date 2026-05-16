@@ -3,6 +3,11 @@
 # downloadable / regenerable caches (do not commit; e.g. geocoding & OSM-related JSON)
 cache/
 
+# Local scratch / uploads (PLSS CSVs, etc. — not part of the repo)
+Temp/
+temp/
+tmp/
+
 # Haul routing smoke test outputs
 haul_routing/tests/out_smoke/
 haul_routing/tests/out_250_fields/

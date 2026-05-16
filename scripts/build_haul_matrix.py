@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Repo root: parent of scripts/
 _ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +113,9 @@ def main() -> int:
         parser.error("--field-remainder is required when --field-modulus is set")
     if args.field_modulus is None and args.field_remainder is not None:
         parser.error("--field-modulus is required when --field-remainder is set")
+
+    oc = (args.owner_column or "").strip()
+    owner_col: Optional[str] = None if oc in ("", "0") else args.owner_column
 
     calculate_field_to_facility_routes(
         fields_path=args.fields,
