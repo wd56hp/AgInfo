@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -15,7 +17,6 @@ from haul_routing.data_loading import load_vector_layer
 from haul_routing.db_export import write_geopackage_routes, write_postgis
 from haul_routing.network import (
     assign_travel_times,
-    combined_bounds,
     expand_bounds_miles,
     load_drive_graph,
     route_length_miles_along_path,
@@ -27,6 +28,7 @@ from haul_routing.router import (
     STATUS_OK,
     crow_distance_miles,
     nearest_graph_node,
+    nearest_graph_nodes_batch,
     route_result_from_predecessor,
     single_source_drive_times,
 )
@@ -73,6 +75,168 @@ def build_nearest_from_routes_all(df_all: pd.DataFrame) -> pd.DataFrame:
     if not df_nearest.empty:
         df_nearest["is_closest_facility"] = True
     return df_nearest
+
+
+def _field_row_base_dict(
+    field_key: Any,
+    owner: Any,
+    flon: float,
+    flat: float,
+    unload_val: float,
+) -> Dict[str, Any]:
+    pt = Point(flon, flat)
+    return {
+        "field_id": field_key,
+        "owner_name": owner,
+        "field_centroid_lon": flon,
+        "field_centroid_lat": flat,
+        "field_centroid_wkt": pt.wkt,
+        "unload_minutes": unload_val,
+    }
+
+
+_FIELD_WORKER_CTX: Optional[Dict[str, Any]] = None
+
+
+def _build_routes_for_field_index(idx: int, ctx: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Compute CSV rows for one field (all facility candidates). Used sequentially and in fork workers."""
+    G = ctx["G"]
+    fields = ctx["fields"]
+    fid_col = ctx["fid_col"]
+    owner_col_resolved: Optional[str] = ctx["owner_col_resolved"]
+    flon = ctx["flon"]
+    flat = ctx["flat"]
+    fac_ids = ctx["fac_ids"]
+    fac_names = ctx["fac_names"]
+    fac_nodes: List[Optional[int]] = ctx["fac_nodes"]
+    max_candidate_miles = float(ctx["max_candidate_miles"])
+    unload_val = float(ctx["unload_val"])
+
+    row = fields.iloc[idx]
+    fk = row[fid_col]
+    owner = row[owner_col_resolved] if owner_col_resolved else None
+    lon, lat = float(row["__lon"]), float(row["__lat"])
+
+    base = _field_row_base_dict(fk, owner, lon, lat, unload_val)
+    dmi = crow_distance_miles(lon, lat, flon, flat)
+    mask = dmi <= max_candidate_miles
+    if not mask.any():
+        return [
+            {
+                **base,
+                "facility_id": None,
+                "facility_name": None,
+                "crow_miles": None,
+                "drive_miles": None,
+                "drive_minutes_one_way": None,
+                "one_way_drive_plus_unload_minutes": None,
+                "total_minutes_two_way_plus_unload": None,
+                "is_closest_facility": False,
+                "status": STATUS_NO_CANDIDATES,
+            }
+        ]
+
+    field_node = nearest_graph_node(G, lon, lat)
+    if field_node is None:
+        out: List[Dict[str, Any]] = []
+        for j in range(len(fac_ids)):
+            if not mask[j]:
+                continue
+            out.append(
+                {
+                    **base,
+                    "facility_id": fac_ids[j],
+                    "facility_name": fac_names[j],
+                    "crow_miles": float(dmi[j]),
+                    "drive_miles": None,
+                    "drive_minutes_one_way": None,
+                    "one_way_drive_plus_unload_minutes": None,
+                    "total_minutes_two_way_plus_unload": None,
+                    "is_closest_facility": False,
+                    "status": STATUS_NO_FIELD_SNAP,
+                }
+            )
+        return out
+
+    candidate_results: List[Dict[str, Any]] = []
+    pred: Dict[Any, Any] = {}
+    dist_time: Dict[Any, float] = {}
+    computed_tree = False
+
+    nfac = len(fac_ids)
+    for j in range(nfac):
+        if not mask[j]:
+            continue
+        crow = float(dmi[j])
+        fac_node = fac_nodes[j]
+        row_d: Dict[str, Any] = {
+            **base,
+            "facility_id": fac_ids[j],
+            "facility_name": fac_names[j],
+            "crow_miles": crow,
+            "is_closest_facility": False,
+        }
+        if fac_node is None:
+            row_d.update(
+                {
+                    "drive_miles": None,
+                    "drive_minutes_one_way": None,
+                    "one_way_drive_plus_unload_minutes": None,
+                    "total_minutes_two_way_plus_unload": None,
+                    "status": STATUS_NO_FACILITY_SNAP,
+                }
+            )
+            candidate_results.append(row_d)
+            continue
+
+        if not computed_tree:
+            pred, dist_time = single_source_drive_times(G, field_node)
+            computed_tree = True
+
+        res = route_result_from_predecessor(
+            G, pred, dist_time, field_node, fac_node, route_length_miles_along_path
+        )
+        if res.status != STATUS_OK:
+            row_d.update(
+                {
+                    "drive_miles": None,
+                    "drive_minutes_one_way": None,
+                    "one_way_drive_plus_unload_minutes": None,
+                    "total_minutes_two_way_plus_unload": None,
+                    "status": res.status,
+                }
+            )
+            candidate_results.append(row_d)
+            continue
+
+        ow = float(res.drive_minutes_one_way)
+        row_d.update(
+            {
+                "drive_miles": float(res.drive_miles),
+                "drive_minutes_one_way": ow,
+                "one_way_drive_plus_unload_minutes": ow + unload_val,
+                "total_minutes_two_way_plus_unload": 2.0 * ow + unload_val,
+                "status": STATUS_OK,
+            }
+        )
+        candidate_results.append(row_d)
+
+    ok = [c for c in candidate_results if c.get("status") == STATUS_OK]
+    if ok:
+        best = min(
+            ok,
+            key=lambda x: (float(x["drive_minutes_one_way"]), float(x["crow_miles"])),
+        )
+        for c in candidate_results:
+            if c["facility_id"] == best["facility_id"]:
+                c["is_closest_facility"] = True
+    return candidate_results
+
+
+def _field_worker_entry(idx: int) -> List[Dict[str, Any]]:
+    if _FIELD_WORKER_CTX is None:
+        raise RuntimeError("field routing worker context is not initialized")
+    return _build_routes_for_field_index(idx, _FIELD_WORKER_CTX)
 
 
 def project_default_speed_config_path(project_root: Optional[Path] = None) -> Path:
@@ -130,6 +294,8 @@ def calculate_field_to_facility_routes(
     postgis_nearest_table: str = "haul_field_facility_routes_nearest",
     output_all_gpkg: Optional[Union[str, Path]] = None,
     output_nearest_gpkg: Optional[Union[str, Path]] = None,
+    postgis_commit_every_n_fields: Optional[int] = 100,
+    field_workers: int = 4,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Compute drive distance and time from each field centroid to candidate facilities.
@@ -152,12 +318,21 @@ def calculate_field_to_facility_routes(
         Optional GraphML or OSM XML; if None, OSMnx downloads by bounding box.
     postgis_url :
         Optional SQLAlchemy URL, e.g. ``postgresql://user:pass@host:15433/aginfo``.
+    postgis_commit_every_n_fields :
+        When ``postgis_url`` is set and ``append_all_csv`` is False, flush route rows after
+        every N **fields** processed (first PostGIS write uses ``replace``, then ``append``).
+        Nearest table uses the same pattern when ``write_nearest_csv`` is True.
+        Use ``0`` or ``None`` for a single load at the end only. Default ``100``.
     field_id_modulus, field_id_remainder :
         If set, keep only parcels where ``field_id % modulus == remainder`` (chunked runs).
     append_all_csv :
         If True, append to ``output_all_routes_path`` without header when the file already exists.
     write_nearest_csv :
         If False, skip writing the per-field nearest summary (use after merging all-route chunks).
+    field_workers :
+        Number of parallel processes for per-field routing on **Linux** (``fork``). Each field still
+        runs one Dijkstra tree then all facility targets. Ignored on other platforms (sequential).
+        Use ``1`` to disable parallelism.
     """
     if write_nearest_csv and output_nearest_path is None:
         raise ValueError("output_nearest_path is required when write_nearest_csv is True")
@@ -251,161 +426,129 @@ def calculate_field_to_facility_routes(
     fac_ids = facilities[fac_id_col].to_numpy()
     fac_names = facilities[fac_name_col].to_numpy()
 
-    b = combined_bounds(fields, facilities)
-    # Download graph for the extent of inputs plus a modest margin (snapping, rural connectors).
-    # Do not add max_candidate_miles here—that only filters facility pairs and would force huge extracts.
-    bbox = expand_bounds_miles(
-        *b, buffer_miles=max(network_bbox_buffer_miles, 5.0)
+    # Download graph for the extent of **fields** plus enough margin to cover snapping,
+    # rural connectors, and any facility within ``max_candidate_miles`` (great-circle) of a field.
+    # Do not union facility geometries into the base bbox: a statewide elevator list makes the
+    # Overpass query enormous even when parcels are local.
+    f_bounds = fields.geometry.total_bounds
+    bf = (float(f_bounds[0]), float(f_bounds[1]), float(f_bounds[2]), float(f_bounds[3]))
+    buffer_miles = max(
+        float(network_bbox_buffer_miles),
+        float(max_candidate_miles) + 3.0,
+        5.0,
     )
+    bbox = expand_bounds_miles(*bf, buffer_miles=buffer_miles)
     logger.info("Loading OSM drive network for bbox %s", bbox)
     G = load_drive_graph(bbox, nx_osm_path=Path(osm_graph_path) if osm_graph_path else None)
     G = assign_travel_times(G, speeds_mph)
     logger.info("Projected graph: %d nodes, %d edges", len(G), G.number_of_edges())
 
-    fac_nodes: List[Optional[int]] = []
-    for j in range(len(facilities)):
-        fac_nodes.append(nearest_graph_node(G, float(flon[j]), float(flat[j])))
+    fac_nodes = nearest_graph_nodes_batch(G, flon, flat)
     n_snap = sum(1 for x in fac_nodes if x is not None)
     logger.info("Snapped %d / %d facilities to drive network nodes", n_snap, len(facilities))
 
     all_rows: List[Dict[str, Any]] = []
 
-    def field_row_base(
-        field_key: Any,
-        owner: Any,
-        flon: float,
-        flat: float,
-    ) -> Dict[str, Any]:
-        pt = Point(flon, flat)
-        return {
-            "field_id": field_key,
-            "owner_name": owner,
-            "field_centroid_lon": flon,
-            "field_centroid_lat": flat,
-            "field_centroid_wkt": pt.wkt,
-            "unload_minutes": unload_val,
-        }
+    pg_every = postgis_commit_every_n_fields
+    if pg_every is not None and pg_every < 0:
+        raise ValueError("postgis_commit_every_n_fields must be >= 0 (use 0 or None for one-shot PostGIS load)")
+    if pg_every == 0:
+        pg_every = None
+    postgis_batch = bool(postgis_url and not append_all_csv and pg_every is not None)
+    pending_pg: List[Dict[str, Any]] = []
+    fields_since_pg = 0
+    pg_all_first = True
+    pg_nn_first = True
 
-    for idx in tqdm(range(len(fields)), desc="Fields"):
-        row = fields.iloc[idx]
-        fk = row[fid_col]
-        owner = row[owner_col_resolved] if owner_col_resolved else None
-        lon, lat = float(row["__lon"]), float(row["__lat"])
-
-        base = field_row_base(fk, owner, lon, lat)
-        dmi = crow_distance_miles(lon, lat, flon, flat)
-        mask = dmi <= max_candidate_miles
-        if not mask.any():
-            all_rows.append(
-                {
-                    **base,
-                    "facility_id": None,
-                    "facility_name": None,
-                    "crow_miles": None,
-                    "drive_miles": None,
-                    "drive_minutes_one_way": None,
-                    "one_way_drive_plus_unload_minutes": None,
-                    "total_minutes_two_way_plus_unload": None,
-                    "is_closest_facility": False,
-                    "status": STATUS_NO_CANDIDATES,
-                }
+    def flush_postgis_batch(force: bool = False) -> None:
+        nonlocal pending_pg, fields_since_pg, pg_all_first, pg_nn_first
+        if not postgis_batch or not pending_pg:
+            return
+        if not force and fields_since_pg < (pg_every or 0):
+            return
+        assert postgis_url is not None
+        df_b = pd.DataFrame(pending_pg)
+        mode_a = "replace" if pg_all_first else "append"
+        write_postgis(df_b, postgis_url, postgis_all_table, if_exists=mode_a)
+        logger.info(
+            "PostGIS batch %s: %d route rows -> %s",
+            mode_a,
+            len(df_b),
+            postgis_all_table,
+        )
+        pg_all_first = False
+        if write_nearest_csv:
+            df_nb = build_nearest_from_routes_all(df_b)
+            mode_n = "replace" if pg_nn_first else "append"
+            write_postgis(df_nb, postgis_url, postgis_nearest_table, if_exists=mode_n)
+            logger.info(
+                "PostGIS batch %s: %d nearest rows -> %s",
+                mode_n,
+                len(df_nb),
+                postgis_nearest_table,
             )
-            continue
+            pg_nn_first = False
+        pending_pg.clear()
+        fields_since_pg = 0
 
-        field_node = nearest_graph_node(G, lon, lat)
-        if field_node is None:
-            for j in range(len(facilities)):
-                if not mask[j]:
-                    continue
-                all_rows.append(
-                    {
-                        **base,
-                        "facility_id": fac_ids[j],
-                        "facility_name": fac_names[j],
-                        "crow_miles": float(dmi[j]),
-                        "drive_miles": None,
-                        "drive_minutes_one_way": None,
-                        "one_way_drive_plus_unload_minutes": None,
-                        "total_minutes_two_way_plus_unload": None,
-                        "is_closest_facility": False,
-                        "status": STATUS_NO_FIELD_SNAP,
-                    }
-                )
-            continue
+    worker_ctx: Dict[str, Any] = {
+        "G": G,
+        "fields": fields,
+        "fid_col": fid_col,
+        "owner_col_resolved": owner_col_resolved,
+        "flon": flon,
+        "flat": flat,
+        "fac_ids": fac_ids,
+        "fac_names": fac_names,
+        "fac_nodes": fac_nodes,
+        "max_candidate_miles": max_candidate_miles,
+        "unload_val": unload_val,
+    }
 
-        candidate_results: List[Dict[str, Any]] = []
-        pred: Dict[Any, Any] = {}
-        dist_time: Dict[Any, float] = {}
-        computed_tree = False
+    fw = max(1, int(field_workers))
+    use_mp = fw > 1 and sys.platform == "linux" and len(fields) > 0
+    if fw > 1 and sys.platform != "linux":
+        logger.warning(
+            "field_workers=%d ignored on %s (parallel routing uses Linux fork); using one worker",
+            fw,
+            sys.platform,
+        )
+        use_mp = False
 
-        for j in range(len(facilities)):
-            if not mask[j]:
-                continue
-            crow = float(dmi[j])
-            fac_node = fac_nodes[j]
-            row_d: Dict[str, Any] = {
-                **base,
-                "facility_id": fac_ids[j],
-                "facility_name": fac_names[j],
-                "crow_miles": crow,
-                "is_closest_facility": False,
-            }
-            if fac_node is None:
-                row_d.update(
-                    {
-                        "drive_miles": None,
-                        "drive_minutes_one_way": None,
-                        "one_way_drive_plus_unload_minutes": None,
-                        "total_minutes_two_way_plus_unload": None,
-                        "status": STATUS_NO_FACILITY_SNAP,
-                    }
-                )
-                candidate_results.append(row_d)
-                continue
+    if use_mp:
+        logger.info("Routing fields with %d parallel workers (process pool)", fw)
+        global _FIELD_WORKER_CTX
+        _FIELD_WORKER_CTX = worker_ctx
+        try:
+            mp_ctx = multiprocessing.get_context("fork")
+            cs = max(1, len(fields) // (fw * 4))
+            with mp_ctx.Pool(fw) as pool:
+                for batch in tqdm(
+                    pool.imap(_field_worker_entry, range(len(fields)), chunksize=cs),
+                    total=len(fields),
+                    desc="Fields",
+                ):
+                    mark = len(all_rows)
+                    try:
+                        all_rows.extend(batch)
+                    finally:
+                        pending_pg.extend(all_rows[mark:])
+                        fields_since_pg += 1
+                        flush_postgis_batch(force=False)
+        finally:
+            _FIELD_WORKER_CTX = None
+    else:
+        for idx in tqdm(range(len(fields)), desc="Fields"):
+            mark = len(all_rows)
+            try:
+                all_rows.extend(_build_routes_for_field_index(idx, worker_ctx))
+            finally:
+                pending_pg.extend(all_rows[mark:])
+                fields_since_pg += 1
+                flush_postgis_batch(force=False)
 
-            if not computed_tree:
-                pred, dist_time = single_source_drive_times(G, field_node)
-                computed_tree = True
-
-            res = route_result_from_predecessor(
-                G, pred, dist_time, field_node, fac_node, route_length_miles_along_path
-            )
-            if res.status != STATUS_OK:
-                row_d.update(
-                    {
-                        "drive_miles": None,
-                        "drive_minutes_one_way": None,
-                        "one_way_drive_plus_unload_minutes": None,
-                        "total_minutes_two_way_plus_unload": None,
-                        "status": res.status,
-                    }
-                )
-                candidate_results.append(row_d)
-                continue
-
-            ow = float(res.drive_minutes_one_way)
-            row_d.update(
-                {
-                    "drive_miles": float(res.drive_miles),
-                    "drive_minutes_one_way": ow,
-                    "one_way_drive_plus_unload_minutes": ow + unload_val,
-                    "total_minutes_two_way_plus_unload": 2.0 * ow + unload_val,
-                    "status": STATUS_OK,
-                }
-            )
-            candidate_results.append(row_d)
-
-        # Closest by successful one-way drive time (tie-break: shorter crow-miles)
-        ok = [c for c in candidate_results if c.get("status") == STATUS_OK]
-        if ok:
-            best = min(
-                ok,
-                key=lambda x: (float(x["drive_minutes_one_way"]), float(x["crow_miles"])),
-            )
-            for c in candidate_results:
-                if c["facility_id"] == best["facility_id"]:
-                    c["is_closest_facility"] = True
-        all_rows.extend(candidate_results)
+    if postgis_batch:
+        flush_postgis_batch(force=True)
 
     df_all = pd.DataFrame(all_rows)
     df_nearest = build_nearest_from_routes_all(df_all)
@@ -431,9 +574,15 @@ def calculate_field_to_facility_routes(
         write_geopackage_routes(df_nearest, output_nearest_gpkg, layer="nearest")
 
     if postgis_url and not append_all_csv:
-        write_postgis(df_all, postgis_url, postgis_all_table, if_exists="replace")
-        if write_nearest_csv:
-            write_postgis(df_nearest, postgis_url, postgis_nearest_table, if_exists="replace")
+        if not postgis_batch:
+            write_postgis(df_all, postgis_url, postgis_all_table, if_exists="replace")
+            if write_nearest_csv:
+                write_postgis(df_nearest, postgis_url, postgis_nearest_table, if_exists="replace")
+        else:
+            logger.info(
+                "PostGIS loaded in batches of %d fields; tables are up to date (no final bulk write).",
+                pg_every,
+            )
     elif postgis_url and append_all_csv:
         logger.warning(
             "PostGIS load skipped (append_all_csv=True). Merge CSV chunks, then merge_nearest + load once."

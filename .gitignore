@@ -5,6 +5,7 @@ cache/
 
 # Haul routing smoke test outputs
 haul_routing/tests/out_smoke/
+haul_routing/tests/out_250_fields/
 haul_routing/runs/
 haul_routing/osmnx_cache/
 

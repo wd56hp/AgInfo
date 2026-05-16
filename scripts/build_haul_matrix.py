@@ -60,6 +60,12 @@ def main() -> int:
     parser.add_argument("--postgis-all-table", default="haul_field_facility_routes_all")
     parser.add_argument("--postgis-nearest-table", default="haul_field_facility_routes_nearest")
     parser.add_argument(
+        "--postgis-commit-every",
+        type=int,
+        default=100,
+        help="With --postgis-url: write to DB after every N fields (route rows). Use 0 for a single load at the end only.",
+    )
+    parser.add_argument(
         "--field-modulus",
         type=int,
         default=None,
@@ -84,9 +90,20 @@ def main() -> int:
         action="store_true",
         help="Do not write nearest CSV; run scripts/merge_haul_nearest.py after concatenating chunks",
     )
+    parser.add_argument(
+        "--field-workers",
+        type=int,
+        default=4,
+        help=(
+            "Parallel processes for per-field routing on Linux (fork). "
+            "Each field runs one Dijkstra to all candidate facilities. Use 1 to disable. "
+            "Ignored on non-Linux (sequential)."
+        ),
+    )
     args = parser.parse_args()
 
-    owner_col = None if args.owner_column in ("", "0", "none", "NONE") else args.owner_column
+    if args.field_workers < 1:
+        parser.error("--field-workers must be >= 1")
 
     write_nearest = not args.no_nearest
     if write_nearest and not args.nearest_output:
@@ -119,6 +136,8 @@ def main() -> int:
         postgis_url=args.postgis_url,
         postgis_all_table=args.postgis_all_table,
         postgis_nearest_table=args.postgis_nearest_table,
+        postgis_commit_every_n_fields=args.postgis_commit_every,
+        field_workers=args.field_workers,
         output_all_gpkg=args.all_gpkg,
         output_nearest_gpkg=args.nearest_gpkg,
     )

@@ -27,7 +27,7 @@ chmod +x scripts/run_haul_full_parcels_30mi.sh
 ./scripts/run_haul_full_parcels_30mi.sh
 ```
 
-Exports **parcels with `gisacre` ≥ 30** (with geometry) and **active grain elevators** (`facility_type_id = 1`) in a **regional bounding box** around your parcel extent (excludes far-off geocodes that would force a continent-scale OSM download). Routing uses a **30 mi** great-circle facility prefilter. Outputs go under `haul_routing/runs/parcels_30mi/`; PostGIS tables **`haul_field_facility_routes_all`** / **`haul_field_facility_routes_nearest`**; then QGIS views from `haul_routing/sql/qgis_views.sql`.
+Exports **parcels where the greater of `gisacre` and `ll_gisacre` is ≥ 30** (nulls treated as 0; with geometry) and **active grain elevators** (`facility_type_id = 1`) in a **regional bounding box** around your parcel extent (excludes far-off geocodes that would force a continent-scale OSM download). Routing uses a **30 mi** great-circle facility prefilter. Outputs go under `haul_routing/runs/parcels_30mi/`; PostGIS tables **`haul_field_facility_routes_all`** / **`haul_field_facility_routes_nearest`**; then QGIS views from `haul_routing/sql/qgis_views.sql`.
 
 Large jobs (tens of thousands of parcels) can take a long time; one Dijkstra tree is built per parcel.
 
@@ -37,11 +37,12 @@ For production-sized counties, combine:
 
 1. **Export fewer parcels** — `scripts/export_postgis_for_haul.py` supports `--agricultural-only`, `--skip-homesite` (drops “Farm Homesite”), repeatable `--exclude-usedesc`, `--min-gisacre`, and `--counties` (comma-separated, case-insensitive).
 2. **Smaller facility prefilter** — lower `--max-miles` (for example **15–20**) so each field considers fewer elevators (less CPU per parcel).
-3. **Chunk by parcel id** — `python scripts/build_haul_matrix.py --field-modulus M --field-remainder r --append-all-csv --no-nearest ...` runs one slice `field_id % M == r`. Concatenate into one `routes_all.csv`, then  
+3. **Chunk by parcel id** — `python scripts/build_haul_matrix.py --field-modulus M --field-remainder r --append-all-csv --no-nearest ...` runs one slice `field_id % M == r`. Run **all** remainders `0 .. M-1` to cover every parcel exactly once. Concatenate into one `routes_all.csv`, then  
    `python scripts/merge_haul_nearest.py --all-input routes_all.csv --nearest-output routes_nearest.csv`.
-4. **OSM cache** — OSMnx caches under `haul_routing/osmnx_cache` (override with `OSMNX_CACHE`; set `OSMNX_USE_CACHE=0` to disable). Saving a **GraphML** once (`--osm-graph`) avoids repeated Overpass downloads for later chunks.
+4. **Plan batch size** — `./scripts/count_haul_parcels.sh` counts parcels where **max(`gisacre`, `ll_gisacre`)** ≥ `MIN_GISACRE` (default 30). `TARGET_FIELDS=250 ./scripts/haul_chunk_plan.sh` suggests `FIELD_MODULUS` so each chunk is ~250 parcels (hash spread may vary slightly).
+5. **OSM cache** — OSMnx caches under `haul_routing/osmnx_cache` (override with `OSMNX_CACHE`; set `OSMNX_USE_CACHE=0` to disable). Saving a **GraphML** once (`--osm-graph`) avoids repeated Overpass downloads for later chunks.
 
-Example driver (Docker, same network as PostGIS): `scripts/run_haul_chunked_matrix.sh` exports **ag-only** parcels, drops homesites, keeps **`gisacre` ≥ 30** by default (`MIN_GISACRE`), uses **20 mi** and **10** id-based chunks, merges `routes_nearest.csv` at the end. Tune `FIELD_MODULUS`, `MAX_MILES`, `MIN_GISACRE`, `H_OUT`, and `OSM_GRAPH` via environment variables (see comments in that script). With `--append-all-csv`, the pipeline **skips PostGIS**; load tables once after you have final CSVs.
+Example driver (Docker, same network as PostGIS): `scripts/run_haul_chunked_matrix.sh` exports parcels where **max(`gisacre`, `ll_gisacre`)** ≥ `MIN_GISACRE` (default 30). Set `HAUL_AG_FILTERS=1` for agricultural-only + skip homesite. Use `FIELD_MODULUS` from `haul_chunk_plan.sh` (default 20 in the script is only a placeholder). It merges `routes_nearest.csv` at the end. Tune `MAX_MILES`, `MIN_GISACRE`, `H_OUT`, `OSM_GRAPH`, and `HAUL_LOAD_POSTGIS` via environment variables (see comments in that script). With `--append-all-csv`, the matrix step **skips PostGIS** per chunk; set `HAUL_LOAD_POSTGIS=1` or load once after final CSVs.
 
 ## Installation
 

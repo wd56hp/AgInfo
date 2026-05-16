@@ -53,6 +53,33 @@ def nearest_graph_node(G: nx.MultiDiGraph, lon: float, lat: float) -> Optional[i
         return None
 
 
+def nearest_graph_nodes_batch(
+    G: nx.MultiDiGraph, lons: np.ndarray, lats: np.ndarray
+) -> List[Optional[int]]:
+    """Snap many lon/lat points to nearest graph nodes (one OSMnx call; faster than a Python loop)."""
+    if len(lons) == 0:
+        return []
+    try:
+        crs = G.graph["crs"]
+        pts = gpd.GeoSeries.from_xy(x=lons, y=lats, crs="EPSG:4326").to_crs(crs)
+        xs = pts.x.to_numpy(dtype=float)
+        ys = pts.y.to_numpy(dtype=float)
+        nodes = ox.distance.nearest_nodes(G, xs, ys)
+        nodes = np.atleast_1d(np.asarray(nodes, dtype=object))
+        out: List[Optional[int]] = []
+        for n in nodes.flat:
+            if n is None or (isinstance(n, float) and np.isnan(n)):
+                out.append(None)
+            else:
+                out.append(int(n))
+        return out
+    except Exception as e:  # noqa: BLE001
+        logger.warning("nearest_nodes batch failed, falling back to sequential: %s", e)
+        return [
+            nearest_graph_node(G, float(lo), float(la)) for lo, la in zip(lons, lats)
+        ]
+
+
 def crow_distance_miles(
     field_lon: float,
     field_lat: float,
