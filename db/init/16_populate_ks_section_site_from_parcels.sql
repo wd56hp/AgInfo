@@ -1,4 +1,5 @@
--- Representative section centroids from parcel geometry grouped by DASC-style PLSS key.
+-- Representative section centroids from parcel geometry (county / field coverage only).
+-- For statewide section points use scripts/load_ks_section_sites_from_dasc.py (DASC ArcGIS).
 -- Builds the same key as parcel columns plss_section + plss_township + plss_range (Kansas).
 -- Only sections that appear in ks_plss_section and have at least one matching parcel get a site.
 

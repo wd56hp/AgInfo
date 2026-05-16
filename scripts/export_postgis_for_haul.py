@@ -96,6 +96,15 @@ def main() -> int:
             "this envelope. Strongly recommended with --limit-parcels so OSM download stays local."
         ),
     )
+    parser.add_argument(
+        "--ks-grain-statewide",
+        action="store_true",
+        help=(
+            "Grain elevators only: keep active type-1 facilities whose lat/lon fall inside a padded "
+            "Kansas bounding box (statewide matrix / border sections), instead of the default "
+            "Great Plains envelope filter."
+        ),
+    )
     args = parser.parse_args()
 
     db_url = args.database_url.strip()
@@ -208,16 +217,29 @@ def main() -> int:
             """
         fac_path = out / "facilities_all.gpkg"
     else:
-        # Limit candidate elevators to the Great Plains corridor around loaded parcels
-        # (excludes national HQs with bad geocodes that blow up OSM bbox, e.g. VA/FL/MA).
-        fac_sql = """
-            SELECT facility_id, name AS facility_name, geom
-            FROM facility
-            WHERE status = 'ACTIVE'
-              AND geom IS NOT NULL
-              AND facility_type_id = 1
-              AND geom::geometry && ST_MakeEnvelope(-103.5, 36.0, -94.0, 40.5, 4326)
-            """
+        if args.ks_grain_statewide:
+            # Padded Kansas bounds on stored lat/lon — drops obvious out-of-state geocode errors
+            # while keeping border elevators still inside ~same OSM extent as statewide PLSS.
+            fac_sql = """
+                SELECT facility_id, name AS facility_name, geom
+                FROM facility
+                WHERE status = 'ACTIVE'
+                  AND geom IS NOT NULL
+                  AND facility_type_id = 1
+                  AND latitude::double precision BETWEEN 36.85 AND 40.3
+                  AND longitude::double precision BETWEEN -102.4 AND -94.0
+                """
+        else:
+            # Limit candidate elevators to the Great Plains corridor around loaded parcels
+            # (excludes national HQs with bad geocodes that blow up OSM bbox, e.g. VA/FL/MA).
+            fac_sql = """
+                SELECT facility_id, name AS facility_name, geom
+                FROM facility
+                WHERE status = 'ACTIVE'
+                  AND geom IS NOT NULL
+                  AND facility_type_id = 1
+                  AND geom::geometry && ST_MakeEnvelope(-103.5, 36.0, -94.0, 40.5, 4326)
+                """
         fac_path = out / "facilities_elevators.gpkg"
 
     facilities = gpd.read_postgis(fac_sql, engine, geom_col="geom")
