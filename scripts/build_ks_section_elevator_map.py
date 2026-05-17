@@ -324,7 +324,7 @@ def main() -> int:
 
     sub = p.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("apply-schema", help="Create tables, indexes, and nearest-elevator view.")
+    sub.add_parser("apply-schema", help="Create tables, indexes, and QGIS-oriented views on nearest-elevator output.")
 
     p_load = sub.add_parser("load-sites", help="Load section centroid points from a vector file into ks_plss_section_site.")
     p_load.add_argument("--vector", required=True, type=Path, help="Path to GeoPackage, GeoJSON, shapefile, …")

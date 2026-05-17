@@ -43,33 +43,45 @@ CREATE INDEX IF NOT EXISTS idx_ks_sec_near_gix ON ks_section_nearest_grain_eleva
 COMMENT ON TABLE ks_section_nearest_grain_elevator IS
     'Crow-flight (geodesic) miles from each section site point to the nearest active grain elevator in facility; built by build_ks_section_elevator_map.py compute.';
 
--- Live nearest row per section site (optional; same logic as compute insert — can be slow for full state in QGIS)
+-- QGIS: same rows/columns as the table (choose geometry column in layer properties if needed).
+DROP VIEW IF EXISTS v_ks_section_nearest_grain_elevator CASCADE;
 CREATE OR REPLACE VIEW v_ks_section_nearest_grain_elevator AS
 SELECT
-    s.feature_id,
-    COALESCE(k.plss_key, sec.section_range_township) AS plss_key,
-    COALESCE(k.section_range_township, sec.section_range_township) AS section_range_township,
-    s.geom AS section_geom,
-    nf.facility_id AS nearest_facility_id,
-    nf.name AS nearest_facility_name,
-    nf.company_id,
-    nf.geom AS facility_geom,
-    ST_Distance(s.geom::geography, nf.geom::geography) / 1609.344::double precision AS distance_miles,
-    ST_MakeLine(s.geom, nf.geom) AS connector_line,
-    nf.facility_type_id,
-    now() AS view_generated_at
-FROM ks_plss_section_site s
-LEFT JOIN v_ks_plss_section_key k ON k.feature_id = s.feature_id
-LEFT JOIN ks_plss_section sec ON sec.feature_id = s.feature_id
-CROSS JOIN LATERAL (
-    SELECT f.facility_id, f.name, f.company_id, f.geom, f.facility_type_id
-    FROM facility f
-    WHERE f.facility_type_id = 1
-      AND f.geom IS NOT NULL
-      AND COALESCE(f.status, 'ACTIVE') = 'ACTIVE'
-    ORDER BY s.geom <-> f.geom
-    LIMIT 1
-) nf;
+    feature_id,
+    plss_key,
+    section_range_township,
+    section_geom,
+    nearest_facility_id,
+    nearest_facility_name,
+    company_id,
+    facility_geom,
+    distance_miles,
+    connector_line,
+    facility_type_id,
+    computed_at
+FROM ks_section_nearest_grain_elevator;
 
 COMMENT ON VIEW v_ks_section_nearest_grain_elevator IS
-    'Nearest grain elevator (facility_type_id = 1) per ks_plss_section_site using KNN + geography distance in miles.';
+    'Geodesic nearest grain elevator per section (reads ks_section_nearest_grain_elevator). For QGIS: section points use section_geom; facilities use facility_geom; crow links use connector_line or the line-only view below.';
+
+-- QGIS: single LineString geometry column named geom (spider / connector layer).
+DROP VIEW IF EXISTS v_ks_section_nearest_elevator_line CASCADE;
+CREATE OR REPLACE VIEW v_ks_section_nearest_elevator_line AS
+SELECT
+    feature_id,
+    plss_key,
+    section_range_township,
+    nearest_facility_id,
+    nearest_facility_name,
+    company_id,
+    distance_miles,
+    computed_at,
+    connector_line AS geom
+FROM ks_section_nearest_grain_elevator
+WHERE connector_line IS NOT NULL;
+
+COMMENT ON VIEW v_ks_section_nearest_elevator_line IS
+    'Crow-flight lines section → nearest elevator (geom). Pair with v_ks_section_nearest_grain_elevator for points.';
+
+GRANT SELECT ON v_ks_section_nearest_grain_elevator TO agadmin;
+GRANT SELECT ON v_ks_section_nearest_elevator_line TO agadmin;

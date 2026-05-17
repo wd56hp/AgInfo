@@ -26,7 +26,7 @@ def _drop_qgis_views_if_exist(engine_url: str) -> None:
 
 
 def _drop_ks_section_haul_views_if_exist(engine_url: str) -> None:
-    """KS section views reference haul_ks_section_* tables; drop before ``to_postgis(..., replace)``."""
+    """Drop legacy v_ks_section_* haul views (may still exist) before ``to_postgis(..., replace)``."""
     eng = create_engine(engine_url)
     with eng.begin() as conn:
         for name in (
